@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../modules/auth/presentation/signin_page.dart';
 import '../modules/auth/presentation/signup_page.dart';
 import '../modules/home/presentation/home_page.dart';
+import '../modules/profile/presentation/profile_page.dart';
 import 'route_constants.dart';
 
 /// Main application router configuration
@@ -92,6 +93,11 @@ class AppRouter {
         builder: (context, state) => const HomePage(),
       ),
       
+      GoRoute(
+        path: RouteConstants.profile,
+        name: 'profile',
+        builder: (context, state) => const ProfilePage(),
+      ),
      
     ],
     
@@ -111,10 +117,10 @@ class AppRouter {
       // Check if current route is public
       final bool isPublicRoute = publicRoutes.contains(location);
       
-      // For now, allow access to home page without authentication check
+      // For now, allow access to home and profile pages without authentication check
       // TODO: Implement proper authentication state management
-      if (location == RouteConstants.home) {
-        return null; // Allow access to home page
+      if (location == RouteConstants.home || location == RouteConstants.profile) {
+        return null; // Allow access to home and profile pages
       }
       
       // If user is not authenticated and trying to access protected route

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../router/navigation_helper.dart';
+import '../../../router/route_constants.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -81,6 +83,11 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: const Color(0xFF8B0000),
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            onPressed: () => context.go(RouteConstants.profile),
+            icon: const Icon(Icons.person),
+            tooltip: 'Profile',
+          ),
           IconButton(
             onPressed: _handleLogout,
             icon: const Icon(Icons.logout),

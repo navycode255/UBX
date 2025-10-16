@@ -281,7 +281,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12.0),
-                                  borderSide: const BorderSide(color: Colors.red),
+                                  borderSide: const BorderSide(color: Color(0xFF003447)),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16.0,
@@ -324,7 +324,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12.0),
-                                  borderSide: const BorderSide(color: Colors.red),
+                                  borderSide: const BorderSide(color: Color(0xFF003447)),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16.0,
@@ -367,7 +367,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12.0),
-                                  borderSide: const BorderSide(color: Colors.red),
+                                  borderSide: const BorderSide(color: Color(0xFF003447)),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16.0,
@@ -424,7 +424,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(12.0),
-                                  borderSide: const BorderSide(color: Colors.red),
+                                  borderSide: const BorderSide(color: Color(0xFF003447)),
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16.0,
@@ -460,8 +460,8 @@ class _SignUpPageState extends State<SignUpPage> {
                               begin: Alignment.centerLeft,
                               end: Alignment.centerRight,
                               colors: [
-                                Color(0xFF8B0000), // Dark red
-                                Color(0xFF4B0082), // Purple
+                                Color(0xFF100C08), // Dark green-black
+                                Color(0xFF95122C), // Dark red
                               ],
                             ),
                             borderRadius: BorderRadius.circular(12.0),
