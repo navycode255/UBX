@@ -9,7 +9,7 @@ This is a **secure Flutter mobile application** that provides:
 - Secure data storage and communication
 - Device unique ID integration for API security
 
-The app will use **Flutter** for frontend development and communicate with a backend API (or use a local database if API is unavailable).
+The app use **Flutter** for frontend development and communicate with a backend API or use a local database if API is unavailable.
 
 
 # Functional Requirements
