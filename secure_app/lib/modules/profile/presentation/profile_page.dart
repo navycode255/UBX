@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../router/route_constants.dart';
+import '../../../router/navigation_helper.dart';
 import '../../../core/services/image_service.dart';
 import '../data/profile_providers.dart';
 import '../data/profile_state.dart';
@@ -481,6 +482,12 @@ class ProfilePage extends ConsumerWidget {
               title: 'Change Password',
               subtitle: 'Security settings',
               onTap: () => _showComingSoon(context, 'Change Password'),
+            ),
+            _buildMenuItem(
+              icon: Icons.fingerprint,
+              title: 'Biometric Settings',
+              subtitle: 'Fingerprint & Face ID',
+              onTap: () => NavigationHelper.goToBiometricSettings(context),
             ),
           ],
         ),

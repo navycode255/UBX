@@ -1,6 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Secure Storage Service
 /// This service handles secure storage of sensitive user data using Flutter Secure Storage
 /// which encrypts data using platform-specific secure storage mechanisms
 class SecureStorageService {
@@ -29,6 +28,7 @@ class SecureStorageService {
   static const String _userIdKey = 'user_id';
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'refresh_token';
+  static const String _biometricEnabledKey = 'biometric_enabled';
 
   /// Store user email securely
   Future<void> storeEmail(String email) async {
@@ -201,6 +201,7 @@ class SecureStorageService {
         _storage.delete(key: _tokenKey),
         _storage.delete(key: _refreshTokenKey),
         _storage.delete(key: _isLoggedInKey),
+        _storage.delete(key: _biometricEnabledKey),
       ]);
     } catch (e) {
       throw SecureStorageException('Failed to clear user data: $e');
@@ -218,6 +219,45 @@ class SecureStorageService {
     }
   }
 
+  /// Set biometric authentication enabled status
+  Future<void> setBiometricEnabled(bool enabled) async {
+    try {
+      await _storage.write(key: _biometricEnabledKey, value: enabled.toString());
+    } catch (e) {
+      throw SecureStorageException('Failed to set biometric enabled status: $e');
+    }
+  }
+
+  /// Get biometric authentication enabled status
+  Future<bool?> getBiometricEnabled() async {
+    try {
+      final value = await _storage.read(key: _biometricEnabledKey);
+      return value == 'true';
+    } catch (e) {
+      throw SecureStorageException('Failed to get biometric enabled status: $e');
+    }
+  }
+
+  /// Get stored credentials for biometric authentication
+  Future<StoredCredentials?> getStoredCredentials() async {
+    try {
+      final email = await getEmail();
+      final password = await getPassword();
+      final name = await getName();
+
+      if (email != null && password != null) {
+        return StoredCredentials(
+          email: email,
+          password: password,
+          name: name,
+        );
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Get all stored user data
   Future<Map<String, String?>> getAllUserData() async {
     try {
@@ -229,11 +269,25 @@ class SecureStorageService {
         'authToken': await getAuthToken(),
         'refreshToken': await getRefreshToken(),
         'isLoggedIn': (await isLoggedIn()).toString(),
+        'biometricEnabled': (await getBiometricEnabled()).toString(),
       };
     } catch (e) {
       throw SecureStorageException('Failed to retrieve all user data: $e');
     }
   }
+}
+
+/// Stored credentials class for biometric authentication
+class StoredCredentials {
+  final String email;
+  final String password;
+  final String? name;
+
+  const StoredCredentials({
+    required this.email,
+    required this.password,
+    this.name,
+  });
 }
 
 /// Custom exception for secure storage operations

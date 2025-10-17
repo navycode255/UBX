@@ -1,6 +1,5 @@
 import 'database_service.dart';
 
-/// Database initialization service
 class DatabaseInit {
   static final DatabaseService _db = DatabaseService.instance;
 

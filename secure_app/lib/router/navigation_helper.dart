@@ -73,6 +73,11 @@ class NavigationHelper {
     context.go(RouteConstants.settings);
   }
 
+  /// Navigate to biometric settings page
+  static void goToBiometricSettings(BuildContext context) {
+    context.go(RouteConstants.biometricSettings);
+  }
+
   // Utility Methods
   // These methods provide additional navigation utilities
 

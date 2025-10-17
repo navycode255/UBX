@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:mysql1/mysql1.dart';
 import '../config/env_config.dart';
 
-/// Database service for managing MySQL connections
 class DatabaseService {
   static DatabaseService? _instance;
   MySqlConnection? _connection;

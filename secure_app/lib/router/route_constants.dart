@@ -14,6 +14,7 @@ class RouteConstants {
   static const String home = '/';
   static const String profile = '/profile';
   static const String settings = '/settings';
+  static const String biometricSettings = '/biometric-settings';
   
   // Error Routes
   static const String notFound = '/404';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../router/navigation_helper.dart';
 import '../../../core/utils/form_validators.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/biometric_service.dart';
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -16,13 +17,89 @@ class _SignInPageState extends State<SignInPage> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isBiometricAvailable = false;
+  bool _isBiometricEnabled = false;
+  String _biometricType = 'Biometric';
   final AuthService _authService = AuthService.instance;
+  final BiometricService _biometricService = BiometricService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricAvailability();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// Check biometric availability and status
+  Future<void> _checkBiometricAvailability() async {
+    try {
+      final isAvailable = await _biometricService.isBiometricAvailable();
+      final isEnabled = await _biometricService.isBiometricEnabled();
+      final biometricType = await _biometricService.getPrimaryBiometricType();
+
+      if (mounted) {
+        setState(() {
+          _isBiometricAvailable = isAvailable;
+          _isBiometricEnabled = isEnabled;
+          _biometricType = biometricType;
+        });
+      }
+    } catch (e) {
+      // Handle error silently
+    }
+  }
+
+  /// Handle biometric sign in
+  Future<void> _handleBiometricSignIn() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await _authService.signInWithBiometric();
+
+      if (result.isSuccess) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: Colors.green,
+            ),
+          );
+          NavigationHelper.goToHome(context);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Biometric sign in failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   /// Handle sign in process with secure storage
@@ -431,6 +508,86 @@ class _SignInPageState extends State<SignInPage> {
                                     ),
                           ),
                         ),
+                        
+                        // Biometric Sign In Button (if available and enabled)
+                        if (_isBiometricAvailable && _isBiometricEnabled) ...[
+                          SizedBox(height: screenHeight * 0.02), // 2% of screen height
+                          
+                          // Divider with "OR"
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Colors.grey.withOpacity(0.3),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                child: Text(
+                                  'OR',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Colors.grey.withOpacity(0.3),
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          SizedBox(height: screenHeight * 0.02), // 2% of screen height
+                          
+                          // Biometric Sign In Button
+                          Container(
+                            height: screenHeight * 0.07, // 7% of screen height
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFF8B0000),
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(12.0),
+                            ),
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _handleBiometricSignIn,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12.0),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    _biometricType.toLowerCase().contains('fingerprint') 
+                                        ? Icons.fingerprint 
+                                        : Icons.face,
+                                    color: const Color(0xFF8B0000),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'SIGN IN WITH $_biometricType',
+                                    style: const TextStyle(
+                                      color: Color(0xFF8B0000),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                         
                         const Spacer(),
                         

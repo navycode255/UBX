@@ -2,6 +2,7 @@ import 'secure_storage_service.dart';
 import '../../modules/auth/data/user_repository.dart';
 import 'database_service.dart';
 import 'user_service.dart';
+import 'biometric_service.dart';
 
 /// Authentication Service
 /// This service handles user authentication operations and integrates with secure storage and database
@@ -18,6 +19,7 @@ class AuthService {
   final UserRepository _userRepository = UserRepository();
   final DatabaseService _database = DatabaseService.instance;
   final UserService _userService = UserService.instance;
+  final BiometricService _biometricService = BiometricService.instance;
 
   /// Sign in user with email and password
   Future<AuthResult> signIn({
@@ -239,6 +241,107 @@ class AuthService {
       throw AuthException('Failed to get user data: ${e.toString()}');
     }
   }
+
+  /// Sign in using biometric authentication
+  Future<AuthResult> signInWithBiometric() async {
+    try {
+      // Check if biometric is available and enabled
+      final setupStatus = await _biometricService.getBiometricSetupStatus();
+      
+      if (setupStatus == BiometricSetupStatus.notAvailable) {
+        return AuthResult.failure('Biometric authentication is not available on this device');
+      }
+      
+      if (setupStatus == BiometricSetupStatus.availableButNotEnabled) {
+        return AuthResult.failure('Biometric authentication is not enabled. Please enable it in settings.');
+      }
+      
+      if (setupStatus == BiometricSetupStatus.enabledButNoCredentials) {
+        return AuthResult.failure('No stored credentials found. Please sign in with email and password first.');
+      }
+
+      // Authenticate with biometric and get credentials
+      final biometricResult = await _biometricService.authenticateAndGetCredentials();
+      
+      if (!biometricResult.isSuccess) {
+        return AuthResult.failure(biometricResult.message);
+      }
+
+      // Use the retrieved credentials to sign in
+      return await signIn(
+        email: biometricResult.credentials!.email,
+        password: biometricResult.credentials!.password,
+      );
+    } catch (e) {
+      return AuthResult.failure('Biometric sign in failed: ${e.toString()}');
+    }
+  }
+
+  /// Enable biometric authentication
+  Future<AuthResult> enableBiometric() async {
+    try {
+      final success = await _biometricService.enableBiometric();
+      
+      if (success) {
+        return AuthResult.success('Biometric authentication enabled successfully');
+      } else {
+        return AuthResult.failure('Failed to enable biometric authentication');
+      }
+    } catch (e) {
+      return AuthResult.failure('Enable biometric failed: ${e.toString()}');
+    }
+  }
+
+  /// Disable biometric authentication
+  Future<AuthResult> disableBiometric() async {
+    try {
+      final success = await _biometricService.disableBiometric();
+      
+      if (success) {
+        return AuthResult.success('Biometric authentication disabled successfully');
+      } else {
+        return AuthResult.failure('Failed to disable biometric authentication');
+      }
+    } catch (e) {
+      return AuthResult.failure('Disable biometric failed: ${e.toString()}');
+    }
+  }
+
+  /// Check if biometric authentication is available
+  Future<bool> isBiometricAvailable() async {
+    try {
+      return await _biometricService.isBiometricAvailable();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Check if biometric authentication is enabled
+  Future<bool> isBiometricEnabled() async {
+    try {
+      return await _biometricService.isBiometricEnabled();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get biometric setup status
+  Future<BiometricSetupStatus> getBiometricSetupStatus() async {
+    try {
+      return await _biometricService.getBiometricSetupStatus();
+    } catch (e) {
+      return BiometricSetupStatus.error;
+    }
+  }
+
+  /// Get primary biometric type for display
+  Future<String> getPrimaryBiometricType() async {
+    try {
+      return await _biometricService.getPrimaryBiometricType();
+    } catch (e) {
+      return 'Biometric';
+    }
+  }
 }
 
 /// Authentication result class
@@ -252,18 +355,6 @@ class AuthResult {
   factory AuthResult.failure(String message) => AuthResult._(false, message);
 }
 
-/// Stored credentials class
-class StoredCredentials {
-  final String email;
-  final String password;
-  final String? name;
-
-  const StoredCredentials({
-    required this.email,
-    required this.password,
-    this.name,
-  });
-}
 
 /// Custom exception for authentication operations
 class AuthException implements Exception {

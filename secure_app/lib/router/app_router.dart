@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../modules/auth/presentation/signin_page.dart';
 import '../modules/auth/presentation/signup_page.dart';
+import '../modules/auth/presentation/biometric_settings_page.dart';
 import '../modules/home/presentation/home_page.dart';
 import '../modules/profile/presentation/profile_page.dart';
 import 'route_constants.dart';
@@ -98,6 +99,12 @@ class AppRouter {
         name: 'profile',
         builder: (context, state) => const ProfilePage(),
       ),
+      
+      GoRoute(
+        path: RouteConstants.biometricSettings,
+        name: 'biometric-settings',
+        builder: (context, state) => const BiometricSettingsPage(),
+      ),
      
     ],
     
@@ -112,6 +119,7 @@ class AppRouter {
         RouteConstants.signIn,
         RouteConstants.signUp,
         RouteConstants.forgotPassword,
+        RouteConstants.biometricSettings,
       ];
       
       // Check if current route is public
