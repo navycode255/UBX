@@ -1,9 +1,32 @@
 import 'package:flutter/material.dart';
 import 'router/app_router.dart';
+import 'core/config/env_config.dart';
+import 'core/services/database_init.dart';
 
 /// Main entry point of the application
 /// This function initializes the app and starts the router
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize environment configuration
+  await EnvConfig.init();
+  
+  // Validate environment variables
+  try {
+    EnvConfig.validate();
+  } catch (e) {
+    debugPrint('Environment validation failed: $e');
+    // Continue with default values for development
+  }
+  
+  // Initialize database
+  try {
+    await DatabaseInit.initializeDatabase();
+  } catch (e) {
+    debugPrint('Database initialization failed: $e');
+    // Continue without database for development
+  }
+  
   runApp(const MainApp());
 }
 

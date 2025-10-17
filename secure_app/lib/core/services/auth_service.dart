@@ -1,7 +1,9 @@
 import 'secure_storage_service.dart';
+import '../../modules/auth/data/user_repository.dart';
+import 'database_service.dart';
 
 /// Authentication Service
-/// This service handles user authentication operations and integrates with secure storage
+/// This service handles user authentication operations and integrates with secure storage and database
 class AuthService {
   // Private constructor to prevent instantiation
   AuthService._();
@@ -10,8 +12,10 @@ class AuthService {
   static final AuthService _instance = AuthService._();
   static AuthService get instance => _instance;
 
-  // Secure storage service instance
+  // Services
   final SecureStorageService _secureStorage = SecureStorageService.instance;
+  final UserRepository _userRepository = UserRepository();
+  final DatabaseService _database = DatabaseService.instance;
 
   /// Sign in user with email and password
   Future<AuthResult> signIn({
@@ -19,40 +23,45 @@ class AuthService {
     required String password,
   }) async {
     try {
-      // TODO: Implement actual authentication with your backend API
-      // For now, we'll simulate authentication by checking stored credentials
-      
-      // Simulate API call delay
-      await Future.delayed(const Duration(seconds: 1));
-      
       // Check if credentials are provided
       if (email.isEmpty || password.isEmpty) {
         return AuthResult.failure('Please enter both email and password');
       }
       
-      // Check if user has stored credentials (simulating user registration)
-      final hasStoredCredentials = await _secureStorage.hasStoredCredentials();
-      
-      if (hasStoredCredentials) {
-        // Get stored credentials for validation
-        final storedEmail = await _secureStorage.getEmail();
-        final storedPassword = await _secureStorage.getPassword();
-        
-        // Validate credentials
-        if (storedEmail == email && storedPassword == password) {
-          // Update login status and tokens
-          await _secureStorage.setLoggedIn(true);
-          await _secureStorage.storeAuthToken('token_${DateTime.now().millisecondsSinceEpoch}');
-          await _secureStorage.storeRefreshToken('refresh_${DateTime.now().millisecondsSinceEpoch}');
-          
-          return AuthResult.success('Sign in successful');
-        } else {
-          return AuthResult.failure('Invalid email or password');
-        }
-      } else {
-        // No stored credentials - user needs to sign up first
-        return AuthResult.failure('No account found. Please sign up first.');
+      // Test database connection
+      final isConnected = await _database.testConnection();
+      if (!isConnected) {
+        return AuthResult.failure('Database connection failed. Please try again.');
       }
+      
+      // Verify password against database
+      final isValidPassword = await _userRepository.verifyPassword(email, password);
+      if (!isValidPassword) {
+        return AuthResult.failure('Invalid email or password');
+      }
+      
+      // Get user data
+      final user = await _userRepository.findByEmail(email);
+      if (user == null) {
+        return AuthResult.failure('User not found');
+      }
+      
+      // Update last login
+      await _userRepository.updateLastLogin(user.userId);
+      
+      // Store user data in secure storage
+      await _secureStorage.storeUserCredentials(
+        email: user.email,
+        password: password, // Store for auto-login
+        name: user.name,
+        userId: user.userId,
+        authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
+        refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
+      );
+      
+      await _secureStorage.setLoggedIn(true);
+      
+      return AuthResult.success('Sign in successful');
     } catch (e) {
       return AuthResult.failure('Sign in failed: ${e.toString()}');
     }
@@ -65,35 +74,41 @@ class AuthService {
     required String name,
   }) async {
     try {
-      // TODO: Implement actual registration with your backend API
-      // For now, we'll simulate registration by storing credentials
-      
-      // Simulate API call delay
-      await Future.delayed(const Duration(seconds: 1));
-      
       // Validate input
       if (email.isEmpty || password.isEmpty || name.isEmpty) {
         return AuthResult.failure('Please fill in all fields');
       }
       
-      // Check if user already exists
-      final hasExistingCredentials = await _secureStorage.hasStoredCredentials();
-      if (hasExistingCredentials) {
-        final storedEmail = await _secureStorage.getEmail();
-        if (storedEmail == email) {
-          return AuthResult.failure('An account with this email already exists');
-        }
+      // Test database connection
+      final isConnected = await _database.testConnection();
+      if (!isConnected) {
+        return AuthResult.failure('Database connection failed. Please try again.');
       }
       
-      // Store new user credentials securely
+      // Check if user already exists
+      final emailExists = await _userRepository.emailExists(email);
+      if (emailExists) {
+        return AuthResult.failure('An account with this email already exists');
+      }
+      
+      // Create new user in database
+      final userId = await _userRepository.createUser(
+        name: name,
+        email: email,
+        password: password,
+      );
+      
+      // Store user credentials in secure storage
       await _secureStorage.storeUserCredentials(
         email: email,
         password: password,
         name: name,
-        userId: 'user_${DateTime.now().millisecondsSinceEpoch}',
+        userId: userId,
         authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
         refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
       );
+      
+      await _secureStorage.setLoggedIn(true);
       
       return AuthResult.success('Account created successfully');
     } catch (e) {
