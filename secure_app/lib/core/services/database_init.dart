@@ -1,4 +1,5 @@
 import 'database_service.dart';
+import 'logging_service.dart';
 
 class DatabaseInit {
   static final DatabaseService _db = DatabaseService.instance;
@@ -18,9 +19,9 @@ class DatabaseInit {
       // Create tables
       await _createTables();
       
-      print('Database initialized successfully');
+      LoggingService.success('Database initialized successfully');
     } catch (e) {
-      print('Database initialization failed: $e');
+      LoggingService.error('Database initialization failed: $e');
       rethrow;
     }
   }

@@ -74,8 +74,6 @@ void main() {
 
     group('State Management', () {
       test('should update state correctly', () {
-        final testFile = File('test_path');
-        
         // Update state
         notifier.state = const ProfileState(
           userName: 'John Doe',

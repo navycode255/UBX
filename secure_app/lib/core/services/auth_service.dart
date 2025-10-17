@@ -3,6 +3,7 @@ import '../../modules/auth/data/user_repository.dart';
 import 'database_service.dart';
 import 'user_service.dart';
 import 'biometric_service.dart';
+import 'pin_service.dart';
 
 /// Authentication Service
 /// This service handles user authentication operations and integrates with secure storage and database
@@ -340,6 +341,134 @@ class AuthService {
       return await _biometricService.getPrimaryBiometricType();
     } catch (e) {
       return 'Biometric';
+    }
+  }
+
+  /// Sign in using biometric with PIN fallback
+  Future<AuthResult> signInWithBiometricAndFallback() async {
+    try {
+      // Try biometric authentication first
+      final biometricResult = await _biometricService.authenticateWithFallback(
+        reason: 'Use biometric to sign in securely',
+        allowPinFallback: true,
+      );
+      
+      if (biometricResult.isSuccess) {
+        // Use the retrieved credentials to sign in
+        return await signIn(
+          email: biometricResult.credentials!.email,
+          password: biometricResult.credentials!.password,
+        );
+      }
+
+      // If biometric fails, return the error message
+      return AuthResult.failure(biometricResult.message);
+    } catch (e) {
+      return AuthResult.failure('Biometric sign in failed: ${e.toString()}');
+    }
+  }
+
+  /// Sign in using PIN fallback
+  Future<AuthResult> signInWithPin(String pin) async {
+    try {
+      // Authenticate with PIN and get credentials
+      final pinResult = await _biometricService.authenticateWithPin(pin);
+      
+      if (!pinResult.isSuccess) {
+        return AuthResult.failure(pinResult.message);
+      }
+
+      // Use the retrieved credentials to sign in
+      return await signIn(
+        email: pinResult.credentials!.email,
+        password: pinResult.credentials!.password,
+      );
+    } catch (e) {
+      return AuthResult.failure('PIN sign in failed: ${e.toString()}');
+    }
+  }
+
+  /// Check if PIN fallback is available
+  Future<bool> isPinFallbackAvailable() async {
+    try {
+      return await _biometricService.isPinFallbackAvailable();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Get PIN setup status
+  Future<PinSetupStatus> getPinSetupStatus() async {
+    try {
+      return await _biometricService.getPinSetupStatus();
+    } catch (e) {
+      return PinSetupStatus(
+        isEnabled: false,
+        isLocked: false,
+        remainingAttempts: 3,
+        lockoutTimeRemaining: 0,
+      );
+    }
+  }
+
+  /// Setup PIN as fallback
+  Future<AuthResult> setupPinFallback(String pin) async {
+    try {
+      final result = await _biometricService.setupPinFallback(pin);
+      
+      if (result.isSuccess) {
+        return AuthResult.success(result.message);
+      } else {
+        return AuthResult.failure(result.message);
+      }
+    } catch (e) {
+      return AuthResult.failure('Setup PIN failed: ${e.toString()}');
+    }
+  }
+
+  /// Change PIN fallback
+  Future<AuthResult> changePinFallback(String currentPin, String newPin) async {
+    try {
+      final result = await _biometricService.changePinFallback(currentPin, newPin);
+      
+      if (result.isSuccess) {
+        return AuthResult.success(result.message);
+      } else {
+        return AuthResult.failure(result.message);
+      }
+    } catch (e) {
+      return AuthResult.failure('Change PIN failed: ${e.toString()}');
+    }
+  }
+
+  /// Disable PIN fallback
+  Future<AuthResult> disablePinFallback(String currentPin) async {
+    try {
+      final result = await _biometricService.disablePinFallback(currentPin);
+      
+      if (result.isSuccess) {
+        return AuthResult.success(result.message);
+      } else {
+        return AuthResult.failure(result.message);
+      }
+    } catch (e) {
+      return AuthResult.failure('Disable PIN failed: ${e.toString()}');
+    }
+  }
+
+  /// Get comprehensive authentication status
+  Future<AuthenticationStatus> getAuthenticationStatus() async {
+    try {
+      return await _biometricService.getAuthenticationStatus();
+    } catch (e) {
+      return AuthenticationStatus(
+        biometricAvailable: false,
+        biometricEnabled: false,
+        pinEnabled: false,
+        pinLocked: false,
+        pinRemainingAttempts: 0,
+        hasAnyAuth: false,
+      );
     }
   }
 }

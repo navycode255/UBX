@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:mysql1/mysql1.dart';
 import '../config/env_config.dart';
+import 'logging_service.dart';
 
 class DatabaseService {
   static DatabaseService? _instance;
@@ -38,11 +39,11 @@ class DatabaseService {
       _connection = await MySqlConnection.connect(settings);
       
       if (EnvConfig.debugMode) {
-        print('Database connected successfully');
+        LoggingService.success('Database connected successfully');
       }
     } catch (e) {
       if (EnvConfig.debugMode) {
-        print('Database connection failed: $e');
+        LoggingService.error('Database connection failed: $e');
       }
       rethrow;
     }
@@ -61,9 +62,9 @@ class DatabaseService {
       return await conn.query(sql, values);
     } catch (e) {
       if (EnvConfig.debugMode) {
-        print('Query failed: $e');
-        print('SQL: $sql');
-        print('Values: $values');
+        LoggingService.error('Query failed: $e');
+        LoggingService.debug('SQL: $sql');
+        LoggingService.debug('Values: $values');
       }
       rethrow;
     }
@@ -100,7 +101,7 @@ class DatabaseService {
       return true;
     } catch (e) {
       if (EnvConfig.debugMode) {
-        print('Database connection test failed: $e');
+        LoggingService.error('Database connection test failed: $e');
       }
       return false;
     }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/biometric_service.dart';
+import 'pin_setup_page.dart';
+import 'pin_verification_dialog.dart';
 
 class BiometricSettingsPage extends StatefulWidget {
   const BiometricSettingsPage({super.key});
@@ -13,6 +15,10 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
   bool _isBiometricAvailable = false;
   bool _isBiometricEnabled = false;
   String _biometricType = 'Biometric';
+  bool _isPinEnabled = false;
+  bool _isPinLocked = false;
+  int _pinRemainingAttempts = 3;
+  int _pinLockoutTimeRemaining = 0;
   bool _isLoading = false;
   
   final AuthService _authService = AuthService.instance;
@@ -24,7 +30,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
     _loadBiometricStatus();
   }
 
-  /// Load current biometric status
+  /// Load current biometric and PIN status
   Future<void> _loadBiometricStatus() async {
     setState(() {
       _isLoading = true;
@@ -34,19 +40,24 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
       final isAvailable = await _biometricService.isBiometricAvailable();
       final isEnabled = await _biometricService.isBiometricEnabled();
       final biometricType = await _biometricService.getPrimaryBiometricType();
+      final pinStatus = await _authService.getPinSetupStatus();
 
       if (mounted) {
         setState(() {
           _isBiometricAvailable = isAvailable;
           _isBiometricEnabled = isEnabled;
           _biometricType = biometricType;
+          _isPinEnabled = pinStatus.isEnabled;
+          _isPinLocked = pinStatus.isLocked;
+          _pinRemainingAttempts = pinStatus.remainingAttempts;
+          _pinLockoutTimeRemaining = pinStatus.lockoutTimeRemaining;
         });
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to load biometric status: ${e.toString()}'),
+            content: Text('Failed to load authentication status: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -113,6 +124,89 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
         });
       }
     }
+  }
+
+  /// Setup PIN fallback
+  Future<void> _setupPin() async {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const PinSetupPage(isSetup: true),
+      ),
+    ).then((_) {
+      // Refresh status after returning from PIN setup
+      _loadBiometricStatus();
+    });
+  }
+
+  /// Change PIN
+  Future<void> _changePin() async {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const PinSetupPage(isSetup: false),
+      ),
+    ).then((_) {
+      // Refresh status after returning from PIN change
+      _loadBiometricStatus();
+    });
+  }
+
+  /// Disable PIN
+  Future<void> _disablePin() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Disable PIN'),
+        content: const Text(
+          'Are you sure you want to disable PIN authentication? You will no longer be able to use PIN as a fallback for biometric authentication.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _confirmDisablePin();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Disable'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Confirm disable PIN with current PIN verification
+  Future<void> _confirmDisablePin() async {
+    showPinVerificationDialog(
+      context: context,
+      title: 'Verify Current PIN',
+      subtitle: 'Enter your current PIN to disable PIN authentication',
+      onSuccess: () async {
+        final result = await _authService.disablePinFallback('');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.message),
+              backgroundColor: result.isSuccess ? Colors.green : Colors.red,
+            ),
+          );
+          if (result.isSuccess) {
+            _loadBiometricStatus();
+          }
+        }
+      },
+      onCancel: () {
+        // User cancelled
+      },
+    );
   }
 
   @override
@@ -321,7 +415,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                               Switch(
                                 value: _isBiometricEnabled,
                                 onChanged: _isLoading ? null : (_) => _toggleBiometric(),
-                                activeColor: const Color(0xFF8B0000),
+                                activeThumbColor: const Color(0xFF8B0000),
                               ),
                             ],
                           ),
@@ -329,6 +423,123 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                       ),
                     ),
                   ],
+
+                  SizedBox(height: screenHeight * 0.03),
+
+                  // PIN Status Card
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(screenWidth * 0.05),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.pin,
+                              color: const Color(0xFF8B0000),
+                              size: 24,
+                            ),
+                            SizedBox(width: screenWidth * 0.03),
+                            Text(
+                              'PIN Fallback',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.045,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: screenHeight * 0.02),
+                        
+                        Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _isPinEnabled ? Colors.green : Colors.grey,
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.03),
+                            Expanded(
+                              child: Text(
+                                _isPinEnabled
+                                    ? 'PIN authentication is enabled as fallback'
+                                    : 'PIN authentication is not set up',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.04,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        if (_isPinEnabled) ...[
+                          SizedBox(height: screenHeight * 0.02),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _isLoading ? null : _changePin,
+                                  icon: const Icon(Icons.edit, size: 18),
+                                  label: const Text('Change PIN'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF8B0000),
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: screenWidth * 0.03),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _isLoading ? null : _disablePin,
+                                  icon: const Icon(Icons.remove_circle_outline, size: 18),
+                                  label: const Text('Disable PIN'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          SizedBox(height: screenHeight * 0.02),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoading ? null : _setupPin,
+                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              label: const Text('Setup PIN Fallback'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF8B0000),
+                                foregroundColor: Colors.white,
+                                padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
 
                   SizedBox(height: screenHeight * 0.03),
 

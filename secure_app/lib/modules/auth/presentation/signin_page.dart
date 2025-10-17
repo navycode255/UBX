@@ -3,6 +3,7 @@ import '../../../router/navigation_helper.dart';
 import '../../../core/utils/form_validators.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/biometric_service.dart';
+import 'pin_verification_dialog.dart';
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -19,6 +20,7 @@ class _SignInPageState extends State<SignInPage> {
   bool _isLoading = false;
   bool _isBiometricAvailable = false;
   bool _isBiometricEnabled = false;
+  bool _isPinFallbackAvailable = false;
   String _biometricType = 'Biometric';
   final AuthService _authService = AuthService.instance;
   final BiometricService _biometricService = BiometricService.instance;
@@ -42,12 +44,14 @@ class _SignInPageState extends State<SignInPage> {
       final isAvailable = await _biometricService.isBiometricAvailable();
       final isEnabled = await _biometricService.isBiometricEnabled();
       final biometricType = await _biometricService.getPrimaryBiometricType();
+      final isPinAvailable = await _authService.isPinFallbackAvailable();
 
       if (mounted) {
         setState(() {
           _isBiometricAvailable = isAvailable;
           _isBiometricEnabled = isEnabled;
           _biometricType = biometricType;
+          _isPinFallbackAvailable = isPinAvailable;
         });
       }
     } catch (e) {
@@ -55,14 +59,14 @@ class _SignInPageState extends State<SignInPage> {
     }
   }
 
-  /// Handle biometric sign in
+  /// Handle biometric sign in with PIN fallback
   Future<void> _handleBiometricSignIn() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final result = await _authService.signInWithBiometric();
+      final result = await _authService.signInWithBiometricAndFallback();
 
       if (result.isSuccess) {
         if (mounted) {
@@ -75,13 +79,18 @@ class _SignInPageState extends State<SignInPage> {
           NavigationHelper.goToHome(context);
         }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result.message),
-              backgroundColor: Colors.red,
-            ),
-          );
+        // If biometric fails and PIN is available, show PIN fallback option
+        if (mounted && _isPinFallbackAvailable) {
+          _showPinFallbackOption();
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(result.message),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
@@ -100,6 +109,60 @@ class _SignInPageState extends State<SignInPage> {
         });
       }
     }
+  }
+
+  /// Show PIN fallback option
+  void _showPinFallbackOption() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.security,
+              color: Theme.of(context).primaryColor,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            const Text('Use PIN Instead'),
+          ],
+        ),
+        content: const Text(
+          'Biometric authentication failed. You can use your PIN as a fallback to sign in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showPinVerificationDialog();
+            },
+            child: const Text('Use PIN'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show PIN verification dialog
+  void _showPinVerificationDialog() {
+    showPinVerificationDialog(
+      context: context,
+      title: 'Enter Your PIN',
+      subtitle: 'Use your PIN to sign in securely',
+      onSuccess: () {
+        NavigationHelper.goToHome(context);
+      },
+      onCancel: () {
+        // User cancelled PIN entry
+      },
+    );
   }
 
   /// Handle sign in process with secure storage
@@ -576,6 +639,84 @@ class _SignInPageState extends State<SignInPage> {
                                   const SizedBox(width: 8),
                                   Text(
                                     'SIGN IN WITH $_biometricType',
+                                    style: const TextStyle(
+                                      color: Color(0xFF8B0000),
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        // PIN Sign In Button (if PIN fallback is available)
+                        if (_isPinFallbackAvailable) ...[
+                          SizedBox(height: screenHeight * 0.02), // 2% of screen height
+                          
+                          // Divider with "OR"
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Colors.grey.withOpacity(0.3),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                child: Text(
+                                  'OR',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Container(
+                                  height: 1,
+                                  color: Colors.grey.withOpacity(0.3),
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          SizedBox(height: screenHeight * 0.02), // 2% of screen height
+                          
+                          // PIN Sign In Button
+                          Container(
+                            height: screenHeight * 0.07, // 7% of screen height
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: const Color(0xFF8B0000),
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(12.0),
+                            ),
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _showPinVerificationDialog,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12.0),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.pin,
+                                    color: const Color(0xFF8B0000),
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'SIGN IN WITH PIN',
                                     style: const TextStyle(
                                       color: Color(0xFF8B0000),
                                       fontSize: 16,
