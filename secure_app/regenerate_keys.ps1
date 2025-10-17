@@ -15,12 +15,12 @@ Write-Host "Found .env file" -ForegroundColor Green
 
 # Generate new JWT_SECRET (64 characters)
 Write-Host "Generating new JWT_SECRET..." -ForegroundColor Yellow
-$jwtSecret = -join ((1..64) | ForEach {[char]((65..90) + (97..122) + (48..57) | Get-Random)})
+$jwtSecret = -join ((1..64) | ForEach-Object {[char]((65..90) + (97..122) + (48..57) | Get-Random)})
 Write-Host "JWT_SECRET generated (64 characters)" -ForegroundColor Green
 
 # Generate new ENCRYPTION_KEY (32 characters)
 Write-Host "Generating new ENCRYPTION_KEY..." -ForegroundColor Yellow
-$encryptionKey = -join ((1..32) | ForEach {[char]((65..90) + (97..122) + (48..57) | Get-Random)})
+$encryptionKey = -join ((1..32) | ForEach-Object {[char]((65..90) + (97..122) + (48..57) | Get-Random)})
 Write-Host "ENCRYPTION_KEY generated (32 characters)" -ForegroundColor Green
 
 # Backup current .env file

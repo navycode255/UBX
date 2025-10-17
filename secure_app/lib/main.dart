@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'router/app_router.dart';
 import 'core/config/env_config.dart';
 import 'core/services/database_init.dart';
@@ -27,7 +28,7 @@ Future<void> main() async {
     // Continue without database for development
   }
   
-  runApp(const MainApp());
+  runApp(const ProviderScope(child: MainApp()));
 }
 
 /// Main application widget

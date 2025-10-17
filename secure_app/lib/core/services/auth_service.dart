@@ -1,6 +1,7 @@
 import 'secure_storage_service.dart';
 import '../../modules/auth/data/user_repository.dart';
 import 'database_service.dart';
+import 'user_service.dart';
 
 /// Authentication Service
 /// This service handles user authentication operations and integrates with secure storage and database
@@ -16,6 +17,7 @@ class AuthService {
   final SecureStorageService _secureStorage = SecureStorageService.instance;
   final UserRepository _userRepository = UserRepository();
   final DatabaseService _database = DatabaseService.instance;
+  final UserService _userService = UserService.instance;
 
   /// Sign in user with email and password
   Future<AuthResult> signIn({
@@ -97,6 +99,9 @@ class AuthService {
         email: email,
         password: password,
       );
+      
+      // Create user profile
+      await _userService.ensureUserProfile(userId);
       
       // Store user credentials in secure storage
       await _secureStorage.storeUserCredentials(

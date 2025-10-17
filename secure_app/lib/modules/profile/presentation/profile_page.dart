@@ -1,26 +1,63 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../router/route_constants.dart';
+import '../../../core/services/image_service.dart';
+import '../data/profile_providers.dart';
+import '../data/profile_state.dart';
 
 /// Beautiful profile page with modern design and app theme colors
-class ProfilePage extends StatefulWidget {
+class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileState = ref.watch(profileDataProvider);
 
-class _ProfilePageState extends State<ProfilePage> {
-  // User data - in a real app, this would come from a service
-  String userName = 'Jhone Williams';
-  String userPhoneNumber = '+60 9876543210';
-  String userEmail = 'jhonewilliams@gmail.com';
-  bool hasProfilePicture = false;
+    // Listen to error state and show snackbar
+    ref.listen<String?>(profileErrorProvider, (previous, next) {
+      if (next != null && next.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next),
+            backgroundColor: Colors.red,
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () {
+                ref.read(profileNotifierProvider.notifier).clearError();
+              },
+            ),
+          ),
+        );
+      }
+    });
 
-  @override
-  Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
+
+    if (profileState.isLoading) {
+      return Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF100C08),
+                Color(0xFF95122C),
+              ],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+        ),
+      );
+    }
 
     return WillPopScope(
       onWillPop: () async {
@@ -54,7 +91,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   // Custom App Bar
-                  _buildAppBar(screenWidth),
+                  _buildAppBar(context, screenWidth),
                   
                   // Profile Content
                   Expanded(
@@ -67,18 +104,22 @@ class _ProfilePageState extends State<ProfilePage> {
                           topRight: Radius.circular(30),
                         ),
                       ),
-                      child: SingleChildScrollView(
-                        child: Column(
-                          children: [
-                            // Profile Picture Section
-                            _buildProfilePictureSection(screenWidth, screenHeight),
-                            
-                            // User Info Section
-                            _buildUserInfoSection(screenWidth, screenHeight),
-                            
-                            // Menu Sections
-                            _buildMenuSections(screenWidth, screenHeight),
-                          ],
+              child: RefreshIndicator(
+                onRefresh: () => ref.read(profileNotifierProvider.notifier).refreshUserData(),
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: Column(
+                            children: [
+                              // Profile Picture Section
+                              _buildProfilePictureSection(context, ref, screenWidth, screenHeight, profileState),
+                              
+                              // User Info Section
+                              _buildUserInfoSection(screenWidth, screenHeight, profileState),
+                              
+                              // Menu Sections
+                              _buildMenuSections(context, screenWidth, screenHeight),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -222,7 +263,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Builds the custom app bar
-  Widget _buildAppBar(double screenWidth) {
+  Widget _buildAppBar(BuildContext context, double screenWidth) {
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: screenWidth * 0.05,
@@ -268,7 +309,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Builds the profile picture section
-  Widget _buildProfilePictureSection(double screenWidth, double screenHeight) {
+  Widget _buildProfilePictureSection(BuildContext context, WidgetRef ref, double screenWidth, double screenHeight, ProfileState profileState) {
     return Container(
       margin: EdgeInsets.only(top: screenHeight * 0.03),
       child: Stack(
@@ -276,7 +317,7 @@ class _ProfilePageState extends State<ProfilePage> {
           // Profile Picture
           Center(
             child: GestureDetector(
-              onTap: () => _showProfilePictureOptions(context),
+              onTap: () => _showProfilePictureOptions(context, ref, profileState),
               child: Container(
                 width: screenWidth * 0.35,
                 height: screenWidth * 0.35,
@@ -296,15 +337,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   ],
                 ),
                 child: ClipOval(
-                  child: hasProfilePicture
-                      ? Image.network(
-                          'https://example.com/profile.jpg',
+                  child: profileState.hasProfilePicture && profileState.profilePictureFile != null
+                      ? Image.file(
+                          profileState.profilePictureFile!,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
-                            return _buildPlaceholderAvatar(screenWidth);
+                            return _buildPlaceholderAvatar(screenWidth, profileState.userName);
                           },
                         )
-                      : _buildPlaceholderAvatar(screenWidth),
+                      : _buildPlaceholderAvatar(screenWidth, profileState.userName),
                 ),
               ),
             ),
@@ -314,7 +355,7 @@ class _ProfilePageState extends State<ProfilePage> {
             bottom: 0,
             right: screenWidth * 0.5 - screenWidth * 0.175 + screenWidth * 0.35 - 20,
             child: GestureDetector(
-              onTap: () => _showProfilePictureOptions(context),
+              onTap: () => _showProfilePictureOptions(context, ref, profileState),
               child: Container(
                 width: 40,
                 height: 40,
@@ -345,7 +386,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Builds placeholder avatar
-  Widget _buildPlaceholderAvatar(double screenWidth) {
+  Widget _buildPlaceholderAvatar(double screenWidth, String userName) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -357,16 +398,21 @@ class _ProfilePageState extends State<ProfilePage> {
           ],
         ),
       ),
-      child: const Icon(
-        Icons.person,
-        size: 80,
-        color: Colors.white,
+      child: Center(
+        child: Text(
+          userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+          style: const TextStyle(
+            fontSize: 40,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }
 
   /// Builds user information section
-  Widget _buildUserInfoSection(double screenWidth, double screenHeight) {
+  Widget _buildUserInfoSection(double screenWidth, double screenHeight, ProfileState profileState) {
     return Container(
       margin: EdgeInsets.symmetric(
         horizontal: screenWidth * 0.05,
@@ -375,7 +421,7 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Column(
         children: [
           Text(
-            userName,
+            profileState.userName,
             style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -384,7 +430,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           SizedBox(height: screenHeight * 0.01),
           Text(
-            userPhoneNumber,
+            profileState.userPhoneNumber,
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey[600],
@@ -393,7 +439,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           SizedBox(height: screenHeight * 0.005),
           Text(
-            userEmail,
+            profileState.userEmail,
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[500],
@@ -405,7 +451,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Builds menu sections
-  Widget _buildMenuSections(double screenWidth, double screenHeight) {
+  Widget _buildMenuSections(BuildContext context, double screenWidth, double screenHeight) {
     return Column(
       children: [
         // Account Settings Section
@@ -596,7 +642,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   /// Shows profile picture options
-  void _showProfilePictureOptions(BuildContext context) {
+  void _showProfilePictureOptions(BuildContext context, WidgetRef ref, ProfileState profileState) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -630,7 +676,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 title: 'Take Photo',
                 onTap: () {
                   Navigator.pop(context);
-                  _showComingSoon(context, 'Camera');
+                  _pickImage(context, ImageSource.camera, ref);
                 },
               ),
               _buildBottomSheetItem(
@@ -638,18 +684,16 @@ class _ProfilePageState extends State<ProfilePage> {
                 title: 'Choose from Gallery',
                 onTap: () {
                   Navigator.pop(context);
-                  _showComingSoon(context, 'Gallery');
+                  _pickImage(context, ImageSource.gallery, ref);
                 },
               ),
-              if (hasProfilePicture)
+              if (profileState.hasProfilePicture)
                 _buildBottomSheetItem(
                   icon: Icons.delete,
                   title: 'Remove Photo',
                   onTap: () {
-                    setState(() {
-                      hasProfilePicture = false;
-                    });
                     Navigator.pop(context);
+                    _removeProfilePicture(context, ref);
                   },
                 ),
             ],
@@ -696,5 +740,54 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ),
     );
+  }
+
+  /// Pick image from camera or gallery
+  Future<void> _pickImage(BuildContext context, ImageSource source, WidgetRef ref) async {
+    try {
+      final imageService = ImageService.instance;
+      final imageFile = await imageService.pickImage(source: source);
+      
+      if (imageFile != null) {
+        await ref.read(profileNotifierProvider.notifier).uploadProfilePicture(imageFile);
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile picture updated successfully!'),
+            backgroundColor: Color(0xFF95122C),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  /// Remove profile picture
+  Future<void> _removeProfilePicture(BuildContext context, WidgetRef ref) async {
+    try {
+      await ref.read(profileNotifierProvider.notifier).removeProfilePicture();
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile picture removed successfully!'),
+          backgroundColor: Color(0xFF95122C),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
