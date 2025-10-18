@@ -1,0 +1,17 @@
+{
+  "name": "secure-app-backend-proxy",
+  "version": "1.0.0",
+  "description": "HTTPS proxy for Laravel development server",
+  "main": "https-proxy.js",
+  "scripts": {
+    "start": "node https-proxy.js",
+    "dev": "node https-proxy.js"
+  },
+  "dependencies": {
+    "http-proxy-middleware": "^2.0.6"
+  },
+  "devDependencies": {},
+  "keywords": ["https", "proxy", "laravel", "development"],
+  "author": "Secure App Team",
+  "license": "MIT"
+}
