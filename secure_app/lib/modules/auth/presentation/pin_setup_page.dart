@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../core/services/auth_service.dart';
-import '../../../router/navigation_helper.dart';
+import '../../../core/services/pin_service.dart';
+import '../../../core/widgets/widgets.dart';
 
 class PinSetupPage extends StatefulWidget {
-  final bool isSetup; // true for setup, false for verification
-  final String? currentPin; // required for verification
+  final bool isSetup; // true for setup, false for change
+  final String? currentPin; // required for change
 
   const PinSetupPage({
     super.key,
@@ -30,6 +30,8 @@ class _PinSetupPageState extends State<PinSetupPage> {
   bool _obscurePin = true;
   bool _obscureConfirmPin = true;
 
+  final PinService _pinService = PinService.instance;
+
   @override
   void initState() {
     super.initState();
@@ -45,304 +47,59 @@ class _PinSetupPageState extends State<PinSetupPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text(widget.isSetup ? 'Setup PIN' : 'Verify PIN'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 40),
-              
-              // Header
-              Icon(
-                Icons.security,
-                size: 80,
-                color: Theme.of(context).primaryColor,
-              ),
-              const SizedBox(height: 24),
-              
-              Text(
-                widget.isSetup ? 'Create Your PIN' : 'Enter Your PIN',
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              
-              Text(
-                widget.isSetup 
-                  ? 'Set up a 6-digit PIN as a fallback for biometric authentication'
-                  : 'Enter your PIN to continue',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-
-              // PIN Input
-              _buildPinInput(),
-              const SizedBox(height: 16),
-
-              // Confirm PIN Input (only for setup)
-              if (widget.isSetup) ...[
-                _buildConfirmPinInput(),
-                const SizedBox(height: 16),
-              ],
-
-              // Error Message
-              if (_errorMessage.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage,
-                          style: TextStyle(
-                            color: Colors.red.shade600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              const Spacer(),
-
-              // Action Buttons
-              _buildActionButtons(),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
+  /// Build background decorative elements
+  Widget _buildBackgroundDecorations(double screenWidth, double screenHeight) {
+    return BackgroundDecorations(
+      screenWidth: screenWidth,
+      screenHeight: screenHeight,
     );
   }
 
-  Widget _buildPinInput() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'PIN',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey.shade700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _pinController,
-          focusNode: _pinFocusNode,
-          obscureText: _obscurePin,
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(6),
-          ],
-          decoration: InputDecoration(
-            hintText: 'Enter 6-digit PIN',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.red),
-            ),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscurePin ? Icons.visibility_off : Icons.visibility,
-                color: Colors.grey.shade600,
-              ),
-              onPressed: () {
-                setState(() {
-                  _obscurePin = !_obscurePin;
-                });
-              },
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          ),
-          onChanged: (value) {
-            setState(() {
-              _pin = value;
-              _errorMessage = '';
-            });
-          },
-          onSubmitted: (value) {
-            if (widget.isSetup) {
-              _confirmPinFocusNode.requestFocus();
-            } else {
-              _handleSubmit();
-            }
-          },
-        ),
-      ],
+  /// Build header section
+  Widget _buildHeader(double screenWidth, double screenHeight) {
+    return PageHeader(
+      title: widget.isSetup ? 'Setup PIN' : 'Change PIN',
+      icon: Icons.pin,
+      onBackPressed: () => Navigator.of(context).pop(),
     );
   }
 
-  Widget _buildConfirmPinInput() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Confirm PIN',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey.shade700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _confirmPinController,
-          focusNode: _confirmPinFocusNode,
-          obscureText: _obscureConfirmPin,
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter.digitsOnly,
-            LengthLimitingTextInputFormatter(6),
-          ],
-          decoration: InputDecoration(
-            hintText: 'Confirm 6-digit PIN',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.red),
-            ),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscureConfirmPin ? Icons.visibility_off : Icons.visibility,
-                color: Colors.grey.shade600,
-              ),
-              onPressed: () {
-                setState(() {
-                  _obscureConfirmPin = !_obscureConfirmPin;
-                });
-              },
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          ),
-          onChanged: (value) {
-            setState(() {
-              _confirmPin = value;
-              _errorMessage = '';
-            });
-          },
-          onSubmitted: (value) {
-            _handleSubmit();
-          },
-        ),
-      ],
+  /// Build PIN input field
+  Widget _buildPinInputField({
+    required String label,
+    required String hint,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required bool obscureText,
+    required VoidCallback onToggleObscure,
+    required ValueChanged<String> onChanged,
+  }) {
+    return PinInputField(
+      label: label,
+      hint: hint,
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: obscureText,
+      onToggleVisibility: onToggleObscure,
+      onSubmitted: () => onChanged(controller.text),
     );
   }
 
-  Widget _buildActionButtons() {
-    final isPinValid = _pin.length == 6;
-    final isConfirmPinValid = !widget.isSetup || _confirmPin.length == 6;
-    final canSubmit = isPinValid && isConfirmPinValid && !_isLoading;
+  /// Setup PIN
+  Future<void> _setupPin() async {
+    if (_pin.length < 4) {
+      setState(() {
+        _errorMessage = 'PIN must be at least 4 digits';
+      });
+      return;
+    }
 
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: canSubmit ? _handleSubmit : null,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
-            child: _isLoading
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : Text(
-                    widget.isSetup ? 'Setup PIN' : 'Verify PIN',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        if (widget.isSetup) ...[
-          TextButton(
-            onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
-            child: const Text(
-              'Skip for now',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Future<void> _handleSubmit() async {
-    if (_isLoading) return;
+    if (_pin != _confirmPin) {
+      setState(() {
+        _errorMessage = 'PINs do not match';
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -350,98 +107,292 @@ class _PinSetupPageState extends State<PinSetupPage> {
     });
 
     try {
-      if (widget.isSetup) {
-        await _handleSetup();
-      } else {
-        await _handleVerification();
+      final result = await _pinService.setupPin(_pin);
+      
+      if (mounted) {
+        if (result.isSuccess) {
+          context.showSuccessNotification(result.message);
+          Navigator.of(context).pop(true);
+        } else {
+          setState(() {
+            _errorMessage = result.message;
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        _errorMessage = 'An unexpected error occurred. Please try again.';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to setup PIN: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  Future<void> _handleSetup() async {
-    // Validate PINs match
-    if (_pin != _confirmPin) {
+  /// Change PIN
+  Future<void> _changePin() async {
+    if (_pin.length < 4) {
       setState(() {
-        _errorMessage = 'PINs do not match. Please try again.';
-        _isLoading = false;
+        _errorMessage = 'PIN must be at least 4 digits';
       });
       return;
     }
 
-    // Setup PIN
-    final result = await AuthService.instance.setupPinFallback(_pin);
-    
+    if (_pin != _confirmPin) {
+      setState(() {
+        _errorMessage = 'PINs do not match';
+      });
+      return;
+    }
+
     setState(() {
-      _isLoading = false;
+      _isLoading = true;
+      _errorMessage = '';
     });
 
-    if (result.isSuccess) {
-      // Show success message
-      _showSuccessDialog();
-    } else {
-      setState(() {
-        _errorMessage = result.message;
-      });
+    try {
+      final result = await _pinService.changePin(widget.currentPin!, _pin);
+      
+      if (mounted) {
+        if (result.isSuccess) {
+          context.showSuccessNotification(result.message);
+          Navigator.of(context).pop(true);
+        } else {
+          setState(() {
+            _errorMessage = result.message;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to change PIN: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  Future<void> _handleVerification() async {
-    // Verify PIN
-    final result = await AuthService.instance.signInWithPin(_pin);
-    
-    setState(() {
-      _isLoading = false;
-    });
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final screenHeight = screenSize.height;
+    final screenWidth = screenSize.width;
 
-    if (result.isSuccess) {
-      // Navigate to main app
-      NavigationHelper.goToHome(context);
-    } else {
-      setState(() {
-        _errorMessage = result.message;
-      });
-    }
-  }
-
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+    return Scaffold(
+      body: Container(
+        height: screenHeight,
+        width: screenWidth,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF8B0000), // Dark red
+              Color(0xFF4B0082), // Purple
+            ],
+          ),
         ),
-        title: Row(
+        child: Stack(
           children: [
-            Icon(
-              Icons.check_circle,
-              color: Colors.green.shade600,
-              size: 28,
+            // Background decorative elements
+            _buildBackgroundDecorations(screenWidth, screenHeight),
+            
+            // Main content
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: screenWidth * 0.08,
+                  vertical: screenHeight * 0.02,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header section
+                    _buildHeader(screenWidth, screenHeight),
+                    
+                    SizedBox(height: screenHeight * 0.04),
+                    
+                    // Content container with glassmorphism
+                    Container(
+                      padding: EdgeInsets.all(screenWidth * 0.06),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Title and description
+                          Text(
+                            widget.isSetup ? 'Create Your PIN' : 'Change Your PIN',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: screenHeight * 0.024,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: screenHeight * 0.01),
+                          Text(
+                            widget.isSetup 
+                                ? 'Set up a PIN for secure access when biometric authentication is not available'
+                                : 'Enter your current PIN and create a new one',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: screenHeight * 0.016,
+                            ),
+                          ),
+                          
+                          SizedBox(height: screenHeight * 0.03),
+                          
+                          // PIN input field
+                          _buildPinInputField(
+                            label: 'Enter PIN',
+                            hint: 'Enter 4-8 digits',
+                            controller: _pinController,
+                            focusNode: _pinFocusNode,
+                            obscureText: _obscurePin,
+                            onToggleObscure: () {
+                              setState(() {
+                                _obscurePin = !_obscurePin;
+                              });
+                            },
+                            onChanged: (value) {
+                              setState(() {
+                                _pin = value;
+                                _errorMessage = '';
+                              });
+                            },
+                          ),
+                          
+                          // Confirm PIN input field
+                          _buildPinInputField(
+                            label: 'Confirm PIN',
+                            hint: 'Re-enter your PIN',
+                            controller: _confirmPinController,
+                            focusNode: _confirmPinFocusNode,
+                            obscureText: _obscureConfirmPin,
+                            onToggleObscure: () {
+                              setState(() {
+                                _obscureConfirmPin = !_obscureConfirmPin;
+                              });
+                            },
+                            onChanged: (value) {
+                              setState(() {
+                                _confirmPin = value;
+                                _errorMessage = '';
+                              });
+                            },
+                          ),
+                          
+                          // Error message
+                          if (_errorMessage.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.red.withOpacity(0.5),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    color: Colors.red[300],
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _errorMessage,
+                                      style: TextStyle(
+                                        color: Colors.red[300],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          
+                          // Action buttons
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white.withOpacity(0.2),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: const Text('Cancel'),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : (widget.isSetup ? _setupPin : _changePin),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.white,
+                                    foregroundColor: const Color(0xFF8B0000),
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B0000)),
+                                          ),
+                                        )
+                                      : Text(widget.isSetup ? 'Setup PIN' : 'Change PIN'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
-            const Text('PIN Setup Complete'),
           ],
         ),
-        content: const Text(
-          'Your PIN has been set up successfully. You can now use it as a fallback for biometric authentication.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to previous page
-            },
-            child: const Text(
-              'Continue',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }

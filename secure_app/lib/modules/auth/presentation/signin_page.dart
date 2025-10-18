@@ -29,6 +29,8 @@ class _SignInPageState extends State<SignInPage> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String? _lastErrorMessage;
+  bool _showRetryButton = false;
   
   // Biometric variables
   bool _isBiometricAvailable = false;
@@ -114,6 +116,8 @@ class _SignInPageState extends State<SignInPage> {
     setState(() {
       _isLoading = true;
       _debugLogs.clear();
+      _lastErrorMessage = null;
+      _showRetryButton = false;
     });
 
     _addDebugLog('🔐 Starting email/password sign in...');
@@ -134,13 +138,13 @@ class _SignInPageState extends State<SignInPage> {
           NavigationHelper.goToHome(context);
         } else {
           _addDebugLog('❌ Sign in failed: ${result.message}');
-          context.showErrorNotification(result.message);
+          _handleSignInError(result.message);
         }
       }
     } catch (e) {
       _addDebugLog('💥 Sign in error: ${e.toString()}');
       if (mounted) {
-        context.showErrorNotification('Sign in failed: ${e.toString()}');
+        _handleSignInError('Sign in failed: ${e.toString()}');
       }
     } finally {
       if (mounted) {
@@ -148,6 +152,36 @@ class _SignInPageState extends State<SignInPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Handle sign in error and show retry option
+  void _handleSignInError(String message) {
+    setState(() {
+      _lastErrorMessage = message;
+      _showRetryButton = true;
+    });
+    
+    // Show error notification with longer duration
+    context.showErrorNotification(message, duration: const Duration(seconds: 6));
+  }
+
+  /// Retry sign in
+  void _retrySignIn() {
+    setState(() {
+      _showRetryButton = false;
+      _lastErrorMessage = null;
+    });
+    _signIn();
+  }
+
+  /// Clear error state when user starts typing
+  void _clearErrorState() {
+    if (_showRetryButton) {
+      setState(() {
+        _showRetryButton = false;
+        _lastErrorMessage = null;
+      });
     }
   }
 
@@ -164,6 +198,8 @@ class _SignInPageState extends State<SignInPage> {
       _biometricSuccess = false;
       _biometricStatusText = 'Authenticating...';
       _debugLogs.clear();
+      _lastErrorMessage = null;
+      _showRetryButton = false;
     });
 
     _addDebugLog('🔐 Starting biometric authentication...');
@@ -248,6 +284,8 @@ class _SignInPageState extends State<SignInPage> {
       _biometricSuccess = false;
       _biometricStatusText = 'Authenticating with PIN...';
       _debugLogs.clear();
+      _lastErrorMessage = null;
+      _showRetryButton = false;
     });
 
     _addDebugLog('🔑 Starting PIN authentication...');
@@ -258,8 +296,8 @@ class _SignInPageState extends State<SignInPage> {
       _addDebugLog('📊 PIN enabled: $isPinEnabled');
       
       // Quick validation
-      if (isPinEnabled == null) {
-        _addDebugLog('❌ PIN service returned null');
+      if (!isPinEnabled) {
+        _addDebugLog('❌ PIN is not enabled');
         _showBiometricError();
         return;
       }
@@ -589,6 +627,7 @@ class _SignInPageState extends State<SignInPage> {
                             TextFormField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
+                              onChanged: (_) => _clearErrorState(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
@@ -655,6 +694,7 @@ class _SignInPageState extends State<SignInPage> {
                             TextFormField(
                               controller: _passwordController,
                               obscureText: _obscurePassword,
+                              onChanged: (_) => _clearErrorState(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,
@@ -784,6 +824,83 @@ class _SignInPageState extends State<SignInPage> {
                           ],
                         ),
                       ),
+                      
+                      // Error message and retry button
+                      if (_showRetryButton && _lastErrorMessage != null) ...[
+                        SizedBox(height: screenHeight * 0.02),
+                        Container(
+                          width: double.infinity,
+                          padding: EdgeInsets.all(screenWidth * 0.04),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    color: Colors.red,
+                                    size: screenWidth * 0.05,
+                                  ),
+                                  SizedBox(width: screenWidth * 0.03),
+                                  Expanded(
+                                    child: Text(
+                                      _lastErrorMessage!,
+                                      style: TextStyle(
+                                        color: Colors.red[700],
+                                        fontSize: screenHeight * 0.016,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: screenHeight * 0.015),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _isLoading ? null : _retrySignIn,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: screenHeight * 0.015,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: _isLoading
+                                      ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
+                                          ),
+                                        )
+                                      : Text(
+                                          'Try Again',
+                                          style: TextStyle(
+                                            fontSize: screenHeight * 0.018,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      
                       SizedBox(height: screenHeight * 0.025),
 
                       // Biometric Authentication Section
