@@ -1,25 +1,22 @@
+import 'api_service.dart';
 import 'secure_storage_service.dart';
-import '../../modules/auth/data/user_repository.dart';
-import 'database_service.dart';
-import 'user_service.dart';
 import 'biometric_service.dart';
-import 'pin_service.dart';
 
 /// Authentication Service
-/// This service handles user authentication operations and integrates with secure storage and database
+/// 
+/// Handles user authentication including:
+/// - Email/password sign in
+/// - Biometric authentication (as login shortcut)
+/// - User registration
+/// - Token management
 class AuthService {
-  // Private constructor to prevent instantiation
-  AuthService._();
-  
-  // Singleton instance
-  static final AuthService _instance = AuthService._();
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
   static AuthService get instance => _instance;
+  AuthService._internal();
 
-  // Services
+  final ApiService _apiService = ApiService();
   final SecureStorageService _secureStorage = SecureStorageService.instance;
-  final UserRepository _userRepository = UserRepository();
-  final DatabaseService _database = DatabaseService.instance;
-  final UserService _userService = UserService.instance;
   final BiometricService _biometricService = BiometricService.instance;
 
   /// Sign in user with email and password
@@ -28,41 +25,70 @@ class AuthService {
     required String password,
   }) async {
     try {
+
+      
       // Check if credentials are provided
       if (email.isEmpty || password.isEmpty) {
         return AuthResult.failure('Please enter both email and password');
       }
       
-      // Test database connection
-      final isConnected = await _database.testConnection();
-      if (!isConnected) {
-        return AuthResult.failure('Database connection failed. Please try again.');
+      // Test API connection
+      final healthResponse = await _apiService.healthCheck();
+      if (!healthResponse.success) {
+        return AuthResult.failure('API connection failed. Please try again.');
       }
       
-      // Verify password against database
-      final isValidPassword = await _userRepository.verifyPassword(email, password);
-      if (!isValidPassword) {
-        return AuthResult.failure('Invalid email or password');
+      // Authenticate with API
+      final authResponse = await _apiService.authenticateUser(
+        email: email,
+        password: password,
+      );
+      
+      if (!authResponse.success) {
+        return AuthResult.failure(authResponse.errorMessage);
       }
       
-      // Get user data
-      final user = await _userRepository.findByEmail(email);
-      if (user == null) {
-        return AuthResult.failure('User not found');
+      // Get user data from API response
+      final userData = authResponse.userData;
+      if (userData == null) {
+        return AuthResult.failure('User data not found');
       }
       
-      // Update last login
-      await _userRepository.updateLastLogin(user.userId);
+      // Debug: Log the user data structure
+      try {
+
+
+
+
+      } catch (e) {
+
+      }
+      
+      // Extract user data from nested structure
+      final actualUserData = userData['data'] as Map<String, dynamic>?;
+      if (actualUserData == null) {
+
+        return AuthResult.failure('Invalid user data structure');
+      }
+      
+
+
+
+
       
       // Store user data in secure storage
       await _secureStorage.storeUserCredentials(
-        email: user.email,
+        email: actualUserData['email'] ?? email,
         password: password, // Store for auto-login
-        name: user.name,
-        userId: user.userId,
+        name: actualUserData['name'] ?? '',
+        userId: actualUserData['user_id'] ?? '',
         authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
         refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
       );
+      
+      // Debug: Verify what was stored
+      final storedUserId = await _secureStorage.getUserId();
+
       
       await _secureStorage.setLoggedIn(true);
       
@@ -84,56 +110,192 @@ class AuthService {
         return AuthResult.failure('Please fill in all fields');
       }
       
-      // Test database connection
-      final isConnected = await _database.testConnection();
-      if (!isConnected) {
-        return AuthResult.failure('Database connection failed. Please try again.');
+      if (password.length < 6) {
+        return AuthResult.failure('Password must be at least 6 characters');
       }
       
-      // Check if user already exists
-      final emailExists = await _userRepository.emailExists(email);
-      if (emailExists) {
-        return AuthResult.failure('An account with this email already exists');
+      // Test API connection
+      final healthResponse = await _apiService.healthCheck();
+      if (!healthResponse.success) {
+        return AuthResult.failure('API connection failed. Please try again.');
       }
       
-      // Create new user in database
-      final userId = await _userRepository.createUser(
+      // Create user via API
+      final createResponse = await _apiService.createUser(
         name: name,
         email: email,
         password: password,
       );
       
-      // Create user profile
-      await _userService.ensureUserProfile(userId);
+      if (!createResponse.success) {
+        return AuthResult.failure(createResponse.errorMessage);
+      }
+      
+      // Extract user data from API response
+
+
+
+
+      
+      final userData = createResponse.userData;
+      if (userData == null) {
+        return AuthResult.failure('User data not received from server');
+      }
+      
+
+
+      
+      // Extract actual user data from nested structure
+      // Check if this is the direct user data structure first
+      Map<String, dynamic> actualUserData;
+      if ((userData.containsKey('user_id') || userData.containsKey('userId')) && 
+          userData.containsKey('name') && 
+          userData.containsKey('email')) {
+
+        actualUserData = userData;
+      } else {
+        // Try nested structure
+        final nestedData = userData['data'] as Map<String, dynamic>?;
+        if (nestedData == null) {
+
+          return AuthResult.failure('Invalid user data structure');
+        }
+        actualUserData = nestedData;
+      }
+      
+
       
       // Store user credentials in secure storage
       await _secureStorage.storeUserCredentials(
-        email: email,
-        password: password,
-        name: name,
-        userId: userId,
+        email: actualUserData['email'] ?? email,
+        password: password, // Store for auto-login
+        name: actualUserData['name'] ?? name,
+        userId: actualUserData['user_id'] ?? actualUserData['userId'] ?? '',
         authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
         refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
       );
       
+      // Debug: Verify what was stored
+      final storedUserId = await _secureStorage.getUserId();
+
+      
       await _secureStorage.setLoggedIn(true);
       
-      return AuthResult.success('Account created successfully');
+      return AuthResult.success('Account created and signed in successfully');
     } catch (e) {
       return AuthResult.failure('Sign up failed: ${e.toString()}');
+    }
+  }
+
+  /// Sign in using biometric authentication
+  Future<AuthResult> signInWithBiometric() async {
+    try {
+      // Check if biometric login is enabled
+      final bool isEnabled = await _biometricService.isBiometricLoginEnabled();
+      if (!isEnabled) {
+        return AuthResult.failure('Biometric login is not enabled. Please sign in with email/password first.');
+      }
+
+      // Authenticate with biometrics
+      final BiometricLoginResult? biometricResult = await _biometricService.authenticateWithBiometric();
+      
+      if (biometricResult == null) {
+        return AuthResult.failure('Biometric authentication failed or cancelled.');
+      }
+
+      // Fetch fresh user data from database using stored token
+      final userDataResult = await _fetchUserDataFromDatabase(
+        biometricResult.userId ?? '', 
+        biometricResult.token ?? ''
+      );
+      
+      if (!userDataResult.success) {
+        return AuthResult.failure('Failed to fetch user data: ${userDataResult.errorMessage}');
+      }
+
+      // Store the fresh user data
+      final userData = userDataResult.userData!;
+      await _secureStorage.storeUserCredentials(
+        email: userData['email'] ?? biometricResult.email,
+        password: '', // Don't store password for biometric login
+        name: userData['name'] ?? biometricResult.name,
+        userId: userData['user_id'] ?? userData['userId'] ?? biometricResult.userId,
+        authToken: biometricResult.token,
+        refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      await _secureStorage.setLoggedIn(true);
+
+
+      return AuthResult.success('Biometric sign-in successful');
+    } catch (e) {
+      return AuthResult.failure('Biometric sign-in failed: ${e.toString()}');
+    }
+  }
+
+  /// Fetch user data from database using stored token
+  Future<DatabaseResult> _fetchUserDataFromDatabase(String userId, String token) async {
+    try {
+
+      
+      // Test API connection first
+      final healthResponse = await _apiService.healthCheck();
+      if (!healthResponse.success) {
+        return DatabaseResult.failure('API connection failed');
+      }
+
+      // Fetch user profile data from API
+      final userResponse = await _apiService.getUserById(userId);
+      
+      if (!userResponse.success) {
+        return DatabaseResult.failure(userResponse.errorMessage);
+      }
+
+      final userData = userResponse.userData;
+      if (userData == null) {
+        return DatabaseResult.failure('User data not found');
+      }
+
+
+
+
+      // The API response structure is direct user data, not nested
+      // Check if this is the direct user data structure
+      if ((userData.containsKey('user_id') || userData.containsKey('userId')) && 
+          userData.containsKey('name') && 
+          userData.containsKey('email')) {
+
+        return DatabaseResult.success(userData);
+      }
+      
+      // Fallback: try nested structure
+      final actualUserData = userData['data'] as Map<String, dynamic>?;
+      if (actualUserData == null) {
+
+        return DatabaseResult.failure('Invalid user data structure - no data field found');
+      }
+
+
+      return DatabaseResult.success(actualUserData);
+    } catch (e) {
+
+      return DatabaseResult.failure('Failed to fetch user data: ${e.toString()}');
     }
   }
 
   /// Sign out user
   Future<void> signOut() async {
     try {
+      // Clear user data but preserve biometric settings
       await _secureStorage.clearUserData();
+      // Note: Biometric settings are preserved so user can still use biometric
+      // for future logins if they had it enabled
     } catch (e) {
       throw AuthException('Sign out failed: ${e.toString()}');
     }
   }
 
-  /// Check if user is currently logged in
+  /// Check if user is logged in
   Future<bool> isLoggedIn() async {
     try {
       return await _secureStorage.isLoggedIn();
@@ -142,95 +304,16 @@ class AuthService {
     }
   }
 
-  /// Get current user's email
-  Future<String?> getCurrentUserEmail() async {
+  /// Get current user data
+  Future<Map<String, String?>> getCurrentUser() async {
     try {
-      return await _secureStorage.getEmail();
+      return {
+        'email': await _secureStorage.getEmail(),
+        'name': await _secureStorage.getName(),
+        'userId': await _secureStorage.getUserId(),
+      };
     } catch (e) {
-      return null;
-    }
-  }
-
-  /// Get current user's name
-  Future<String?> getCurrentUserName() async {
-    try {
-      return await _secureStorage.getName();
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Get current user's ID
-  Future<String?> getCurrentUserId() async {
-    try {
-      return await _secureStorage.getUserId();
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Get stored credentials for auto-login
-  Future<StoredCredentials?> getStoredCredentials() async {
-    try {
-      final hasCredentials = await _secureStorage.hasStoredCredentials();
-      if (!hasCredentials) return null;
-
-      final email = await _secureStorage.getEmail();
-      final password = await _secureStorage.getPassword();
-      final name = await _secureStorage.getName();
-
-      if (email != null && password != null) {
-        return StoredCredentials(
-          email: email,
-          password: password,
-          name: name,
-        );
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Auto-login with stored credentials
-  Future<AuthResult> autoLogin() async {
-    try {
-      final credentials = await getStoredCredentials();
-      if (credentials == null) {
-        return AuthResult.failure('No stored credentials found');
-      }
-
-      return await signIn(
-        email: credentials.email,
-        password: credentials.password,
-      );
-    } catch (e) {
-      return AuthResult.failure('Auto-login failed: ${e.toString()}');
-    }
-  }
-
-  /// Refresh authentication token
-  Future<AuthResult> refreshToken() async {
-    try {
-      final refreshToken = await _secureStorage.getRefreshToken();
-      if (refreshToken == null) {
-        return AuthResult.failure('No refresh token available');
-      }
-
-      // TODO: Implement actual token refresh with your backend API
-      // For now, we'll simulate a successful refresh
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      // Generate new tokens
-      final newAuthToken = 'token_${DateTime.now().millisecondsSinceEpoch}';
-      final newRefreshToken = 'refresh_${DateTime.now().millisecondsSinceEpoch}';
-      
-      await _secureStorage.storeAuthToken(newAuthToken);
-      await _secureStorage.storeRefreshToken(newRefreshToken);
-      
-      return AuthResult.success('Token refreshed successfully');
-    } catch (e) {
-      return AuthResult.failure('Token refresh failed: ${e.toString()}');
+      throw AuthException('Failed to get current user: ${e.toString()}');
     }
   }
 
@@ -243,237 +326,101 @@ class AuthService {
     }
   }
 
-  /// Sign in using biometric authentication
-  Future<AuthResult> signInWithBiometric() async {
+  /// Get current user ID
+  Future<String?> getCurrentUserId() async {
     try {
-      // Check if biometric is available and enabled
-      final setupStatus = await _biometricService.getBiometricSetupStatus();
-      
-      if (setupStatus == BiometricSetupStatus.notAvailable) {
-        return AuthResult.failure('Biometric authentication is not available on this device');
-      }
-      
-      if (setupStatus == BiometricSetupStatus.availableButNotEnabled) {
-        return AuthResult.failure('Biometric authentication is not enabled. Please enable it in settings.');
-      }
-      
-      if (setupStatus == BiometricSetupStatus.enabledButNoCredentials) {
-        return AuthResult.failure('No stored credentials found. Please sign in with email and password first.');
-      }
-
-      // Authenticate with biometric and get credentials
-      final biometricResult = await _biometricService.authenticateAndGetCredentials();
-      
-      if (!biometricResult.isSuccess) {
-        return AuthResult.failure(biometricResult.message);
-      }
-
-      // Use the retrieved credentials to sign in
-      return await signIn(
-        email: biometricResult.credentials!.email,
-        password: biometricResult.credentials!.password,
-      );
+      return await _secureStorage.getUserId();
     } catch (e) {
-      return AuthResult.failure('Biometric sign in failed: ${e.toString()}');
+      throw AuthException('Failed to get user ID: ${e.toString()}');
+    }
+  }
+
+  /// Get current user name
+  Future<String?> getCurrentUserName() async {
+    try {
+      return await _secureStorage.getName();
+    } catch (e) {
+      throw AuthException('Failed to get user name: ${e.toString()}');
+    }
+  }
+
+  /// Get current user email
+  Future<String?> getCurrentUserEmail() async {
+    try {
+      return await _secureStorage.getEmail();
+    } catch (e) {
+      throw AuthException('Failed to get user email: ${e.toString()}');
     }
   }
 
   /// Enable biometric authentication
   Future<AuthResult> enableBiometric() async {
     try {
-      final success = await _biometricService.enableBiometric();
-      
-      if (success) {
-        return AuthResult.success('Biometric authentication enabled successfully');
-      } else {
-        return AuthResult.failure('Failed to enable biometric authentication');
-      }
+      // This is handled automatically in signIn method
+      return AuthResult.success('Biometric authentication enabled');
     } catch (e) {
-      return AuthResult.failure('Enable biometric failed: ${e.toString()}');
+      return AuthResult.failure('Failed to enable biometric: ${e.toString()}');
     }
   }
 
   /// Disable biometric authentication
   Future<AuthResult> disableBiometric() async {
     try {
-      final success = await _biometricService.disableBiometric();
-      
-      if (success) {
-        return AuthResult.success('Biometric authentication disabled successfully');
-      } else {
-        return AuthResult.failure('Failed to disable biometric authentication');
-      }
+      await _biometricService.disableBiometricLogin();
+      return AuthResult.success('Biometric authentication disabled');
     } catch (e) {
-      return AuthResult.failure('Disable biometric failed: ${e.toString()}');
+      return AuthResult.failure('Failed to disable biometric: ${e.toString()}');
     }
   }
 
-  /// Check if biometric authentication is available
-  Future<bool> isBiometricAvailable() async {
-    try {
-      return await _biometricService.isBiometricAvailable();
-    } catch (e) {
-      return false;
-    }
+  /// Get PIN setup status (placeholder for compatibility)
+  Future<String> getPinSetupStatus() async {
+    return 'not_available'; // PIN fallback not implemented in simple version
   }
 
-  /// Check if biometric authentication is enabled
-  Future<bool> isBiometricEnabled() async {
-    try {
-      return await _biometricService.isBiometricEnabled();
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Get biometric setup status
-  Future<BiometricSetupStatus> getBiometricSetupStatus() async {
-    try {
-      return await _biometricService.getBiometricSetupStatus();
-    } catch (e) {
-      return BiometricSetupStatus.error;
-    }
-  }
-
-  /// Get primary biometric type for display
-  Future<String> getPrimaryBiometricType() async {
-    try {
-      return await _biometricService.getPrimaryBiometricType();
-    } catch (e) {
-      return 'Biometric';
-    }
-  }
-
-  /// Sign in using biometric with PIN fallback
-  Future<AuthResult> signInWithBiometricAndFallback() async {
-    try {
-      // Try biometric authentication first
-      final biometricResult = await _biometricService.authenticateWithFallback(
-        reason: 'Use biometric to sign in securely',
-        allowPinFallback: true,
-      );
-      
-      if (biometricResult.isSuccess) {
-        // Use the retrieved credentials to sign in
-        return await signIn(
-          email: biometricResult.credentials!.email,
-          password: biometricResult.credentials!.password,
-        );
-      }
-
-      // If biometric fails, return the error message
-      return AuthResult.failure(biometricResult.message);
-    } catch (e) {
-      return AuthResult.failure('Biometric sign in failed: ${e.toString()}');
-    }
-  }
-
-  /// Sign in using PIN fallback
-  Future<AuthResult> signInWithPin(String pin) async {
-    try {
-      // Authenticate with PIN and get credentials
-      final pinResult = await _biometricService.authenticateWithPin(pin);
-      
-      if (!pinResult.isSuccess) {
-        return AuthResult.failure(pinResult.message);
-      }
-
-      // Use the retrieved credentials to sign in
-      return await signIn(
-        email: pinResult.credentials!.email,
-        password: pinResult.credentials!.password,
-      );
-    } catch (e) {
-      return AuthResult.failure('PIN sign in failed: ${e.toString()}');
-    }
-  }
-
-  /// Check if PIN fallback is available
-  Future<bool> isPinFallbackAvailable() async {
-    try {
-      return await _biometricService.isPinFallbackAvailable();
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Get PIN setup status
-  Future<PinSetupStatus> getPinSetupStatus() async {
-    try {
-      return await _biometricService.getPinSetupStatus();
-    } catch (e) {
-      return PinSetupStatus(
-        isEnabled: false,
-        isLocked: false,
-        remainingAttempts: 3,
-        lockoutTimeRemaining: 0,
-      );
-    }
-  }
-
-  /// Setup PIN as fallback
+  /// Setup PIN fallback (placeholder for compatibility)
   Future<AuthResult> setupPinFallback(String pin) async {
-    try {
-      final result = await _biometricService.setupPinFallback(pin);
-      
-      if (result.isSuccess) {
-        return AuthResult.success(result.message);
-      } else {
-        return AuthResult.failure(result.message);
-      }
-    } catch (e) {
-      return AuthResult.failure('Setup PIN failed: ${e.toString()}');
-    }
+    return AuthResult.failure('PIN fallback not implemented in simple version');
   }
 
-  /// Change PIN fallback
-  Future<AuthResult> changePinFallback(String currentPin, String newPin) async {
-    try {
-      final result = await _biometricService.changePinFallback(currentPin, newPin);
-      
-      if (result.isSuccess) {
-        return AuthResult.success(result.message);
-      } else {
-        return AuthResult.failure(result.message);
-      }
-    } catch (e) {
-      return AuthResult.failure('Change PIN failed: ${e.toString()}');
-    }
+  /// Sign in with PIN (placeholder for compatibility)
+  Future<AuthResult> signInWithPin(String pin) async {
+    return AuthResult.failure('PIN authentication not implemented in simple version');
   }
 
-  /// Disable PIN fallback
-  Future<AuthResult> disablePinFallback(String currentPin) async {
-    try {
-      final result = await _biometricService.disablePinFallback(currentPin);
-      
-      if (result.isSuccess) {
-        return AuthResult.success(result.message);
-      } else {
-        return AuthResult.failure(result.message);
-      }
-    } catch (e) {
-      return AuthResult.failure('Disable PIN failed: ${e.toString()}');
-    }
+  /// Disable PIN fallback (placeholder for compatibility)
+  Future<AuthResult> disablePinFallback(String pin) async {
+    return AuthResult.failure('PIN fallback not implemented in simple version');
   }
 
-  /// Get comprehensive authentication status
-  Future<AuthenticationStatus> getAuthenticationStatus() async {
+  /// Clear stored credentials (for debugging)
+  Future<void> clearCredentials() async {
     try {
-      return await _biometricService.getAuthenticationStatus();
+      await _secureStorage.clearAll();
     } catch (e) {
-      return AuthenticationStatus(
-        biometricAvailable: false,
-        biometricEnabled: false,
-        pinEnabled: false,
-        pinLocked: false,
-        pinRemainingAttempts: 0,
-        hasAnyAuth: false,
-      );
+      throw AuthException('Failed to clear credentials: ${e.toString()}');
     }
   }
 }
 
-/// Authentication result class
+/// Database operation result
+class DatabaseResult {
+  final bool success;
+  final String errorMessage;
+  final Map<String, dynamic>? userData;
+
+  const DatabaseResult._(this.success, this.errorMessage, this.userData);
+
+  factory DatabaseResult.success(Map<String, dynamic> userData) {
+    return DatabaseResult._(true, '', userData);
+  }
+
+  factory DatabaseResult.failure(String errorMessage) {
+    return DatabaseResult._(false, errorMessage, null);
+  }
+}
+
+/// Authentication result
 class AuthResult {
   final bool isSuccess;
   final String message;
@@ -484,8 +431,7 @@ class AuthResult {
   factory AuthResult.failure(String message) => AuthResult._(false, message);
 }
 
-
-/// Custom exception for authentication operations
+/// Authentication exception
 class AuthException implements Exception {
   final String message;
   

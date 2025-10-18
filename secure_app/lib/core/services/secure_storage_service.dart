@@ -190,7 +190,7 @@ class SecureStorageService {
     }
   }
 
-  /// Clear specific user data
+  /// Clear specific user data (but preserve biometric settings)
   Future<void> clearUserData() async {
     try {
       await Future.wait([
@@ -201,7 +201,7 @@ class SecureStorageService {
         _storage.delete(key: _tokenKey),
         _storage.delete(key: _refreshTokenKey),
         _storage.delete(key: _isLoggedInKey),
-        _storage.delete(key: _biometricEnabledKey),
+        // Note: We intentionally keep _biometricEnabledKey to preserve biometric settings
       ]);
     } catch (e) {
       throw SecureStorageException('Failed to clear user data: $e');
@@ -255,6 +255,53 @@ class SecureStorageService {
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Store boolean value securely
+  Future<void> setBool(String key, bool value) async {
+    try {
+      await _storage.write(key: key, value: value.toString());
+    } catch (e) {
+      throw SecureStorageException('Failed to store boolean: $e');
+    }
+  }
+
+  /// Retrieve boolean value
+  Future<bool?> getBool(String key) async {
+    try {
+      final value = await _storage.read(key: key);
+      if (value == null) return null;
+      return value.toLowerCase() == 'true';
+    } catch (e) {
+      throw SecureStorageException('Failed to retrieve boolean: $e');
+    }
+  }
+
+  /// Store string value securely
+  Future<void> setString(String key, String value) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } catch (e) {
+      throw SecureStorageException('Failed to store string: $e');
+    }
+  }
+
+  /// Retrieve string value
+  Future<String?> getString(String key) async {
+    try {
+      return await _storage.read(key: key);
+    } catch (e) {
+      throw SecureStorageException('Failed to retrieve string: $e');
+    }
+  }
+
+  /// Delete a specific key
+  Future<void> delete(String key) async {
+    try {
+      await _storage.delete(key: key);
+    } catch (e) {
+      throw SecureStorageException('Failed to delete key: $e');
     }
   }
 
