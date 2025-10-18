@@ -29,6 +29,7 @@ class SecureStorageService {
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'refresh_token';
   static const String _biometricEnabledKey = 'biometric_enabled';
+  static const String _appLockedKey = 'app_locked';
 
   /// Store user email securely
   Future<void> storeEmail(String email) async {
@@ -305,6 +306,25 @@ class SecureStorageService {
     }
   }
 
+  /// Set app locked status
+  Future<void> setAppLocked(bool isLocked) async {
+    try {
+      await _storage.write(key: _appLockedKey, value: isLocked.toString());
+    } catch (e) {
+      throw SecureStorageException('Failed to set app locked status: $e');
+    }
+  }
+
+  /// Check if app is locked
+  Future<bool> isAppLocked() async {
+    try {
+      final value = await _storage.read(key: _appLockedKey);
+      return value == 'true';
+    } catch (e) {
+      throw SecureStorageException('Failed to check app locked status: $e');
+    }
+  }
+
   /// Get all stored user data
   Future<Map<String, String?>> getAllUserData() async {
     try {
@@ -317,6 +337,7 @@ class SecureStorageService {
         'refreshToken': await getRefreshToken(),
         'isLoggedIn': (await isLoggedIn()).toString(),
         'biometricEnabled': (await getBiometricEnabled()).toString(),
+        'appLocked': (await isAppLocked()).toString(),
       };
     } catch (e) {
       throw SecureStorageException('Failed to retrieve all user data: $e');

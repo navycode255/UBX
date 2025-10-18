@@ -27,23 +27,28 @@ class DatabaseService {
   /// Establish database connection
   Future<void> _connect() async {
     try {
+      final host = await EnvConfig.dbHost;
       final settings = ConnectionSettings(
-        host: EnvConfig.dbHost,
+        host: host,
         port: EnvConfig.dbPort,
         user: EnvConfig.dbUser,
         password: EnvConfig.dbPassword,
         db: EnvConfig.dbName,
         timeout: Duration(seconds: EnvConfig.apiTimeoutSeconds),
       );
+          if (EnvConfig.debugMode) {
+        LoggingService.debug('Attempting to connect to database at $host:${EnvConfig.dbPort}');
+      }
       
       _connection = await MySqlConnection.connect(settings);
       
       if (EnvConfig.debugMode) {
-        LoggingService.success('Database connected successfully');
+        LoggingService.success('Database connected successfully to $host:${EnvConfig.dbPort}');
       }
     } catch (e) {
       if (EnvConfig.debugMode) {
         LoggingService.error('Database connection failed: $e');
+        LoggingService.debug('Connection details: host=${await EnvConfig.dbHost}, port=${EnvConfig.dbPort}, user=${EnvConfig.dbUser}, db=${EnvConfig.dbName}');
       }
       rethrow;
     }
@@ -97,12 +102,21 @@ class DatabaseService {
   /// Test database connection
   Future<bool> testConnection() async {
     try {
+      // Close existing connection if any
+      await close();
+      
+      // Try to establish a new connection
+      await _connect();
+      
+      // Test with a simple query
       await query('SELECT 1');
       return true;
     } catch (e) {
       if (EnvConfig.debugMode) {
         LoggingService.error('Database connection test failed: $e');
       }
+      // Reset connection on failure
+      _connection = null;
       return false;
     }
   }

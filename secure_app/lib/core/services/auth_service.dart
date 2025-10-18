@@ -91,6 +91,8 @@ class AuthService {
 
       
       await _secureStorage.setLoggedIn(true);
+      // Don't lock immediately after sign in - let the user use the app first
+      // The app will lock when paused/detached
       
       return AuthResult.success('Sign in successful');
     } catch (e) {
@@ -180,6 +182,8 @@ class AuthService {
 
       
       await _secureStorage.setLoggedIn(true);
+      // Don't lock immediately after sign up - let the user use the app first
+      // The app will lock when paused/detached
       
       return AuthResult.success('Account created and signed in successfully');
     } catch (e) {
@@ -225,7 +229,8 @@ class AuthService {
       );
 
       await _secureStorage.setLoggedIn(true);
-
+      // Don't lock immediately after biometric sign in - let the user use the app first
+      // The app will lock when paused/detached
 
       return AuthResult.success('Biometric sign-in successful');
     } catch (e) {
@@ -288,6 +293,8 @@ class AuthService {
     try {
       // Clear user data but preserve biometric settings
       await _secureStorage.clearUserData();
+      // Clear app lockout state
+      await _secureStorage.setAppLocked(false);
       // Note: Biometric settings are preserved so user can still use biometric
       // for future logins if they had it enabled
     } catch (e) {
