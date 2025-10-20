@@ -13,6 +13,7 @@ class PinInputField extends StatefulWidget {
   final int maxLength;
   final TextInputAction textInputAction;
   final VoidCallback? onSubmitted;
+  final ValueChanged<String>? onChanged;
 
   const PinInputField({
     super.key,
@@ -26,6 +27,7 @@ class PinInputField extends StatefulWidget {
     this.maxLength = 4,
     this.textInputAction = TextInputAction.done,
     this.onSubmitted,
+    this.onChanged,
   });
 
   @override
@@ -61,6 +63,7 @@ class _PinInputFieldState extends State<PinInputField> {
           validator: widget.validator,
           maxLength: widget.maxLength,
           textInputAction: widget.textInputAction,
+          onChanged: widget.onChanged,
           onFieldSubmitted: (_) => widget.onSubmitted?.call(),
           keyboardType: TextInputType.number,
           inputFormatters: [
@@ -132,3 +135,4 @@ class _PinInputFieldState extends State<PinInputField> {
     );
   }
 }
+

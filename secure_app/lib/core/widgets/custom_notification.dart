@@ -172,9 +172,7 @@ class _CustomNotificationState extends State<CustomNotification>
                         widget.type == NotificationType.success
                             ? Icons.check_circle_outline
                             : Icons.error_outline,
-                        color: widget.type == NotificationType.success
-                            ? const Color(0xFF2E7D32) // Dark green icon
-                            : const Color(0xFFB71C1C), // Dark red icon
+                        color: Colors.white, // White icon
                         size: screenWidth * 0.04,
                       ),
                     ),
