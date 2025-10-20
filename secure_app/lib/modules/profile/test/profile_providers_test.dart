@@ -40,13 +40,12 @@ void main() {
 
       test('should update when notifier state changes', () {
         final notifier = container.read(profileNotifierProvider.notifier);
-        final testFile = File('test_path');
         
         // Update state
         notifier.state = const ProfileState(
           userName: 'John Doe',
           userEmail: 'john@example.com',
-          userPhoneNumber: '+1234567890',
+          userPhoneNumber: '+255734567890',
           hasProfilePicture: true,
           isLoading: false,
         );
@@ -54,7 +53,7 @@ void main() {
         final updatedState = container.read(profileDataProvider);
         expect(updatedState.userName, 'John Doe');
         expect(updatedState.userEmail, 'john@example.com');
-        expect(updatedState.userPhoneNumber, '+1234567890');
+        expect(updatedState.userPhoneNumber, '+255734567890');
         expect(updatedState.hasProfilePicture, true);
         expect(updatedState.isLoading, false);
       });

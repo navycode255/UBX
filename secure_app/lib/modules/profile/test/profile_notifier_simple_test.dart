@@ -53,9 +53,6 @@ void main() {
         expect(() => notifier.updateUserProfile(
           name: 'John Doe',
           phoneNumber: '+1234567890',
-          bio: 'Test bio',
-          city: 'Test City',
-          country: 'Test Country',
         ), returnsNormally);
       });
     });

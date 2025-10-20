@@ -1,15 +1,15 @@
-import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/services/auth_service.dart';
-import '../../../core/services/api_service.dart';
-import '../../../core/models/user_model.dart';
+import '../../../core/services/profile_service.dart';
 import 'profile_state.dart';
 
-/// Profile state notifier
+/// Profile state notifier using local database
 class ProfileNotifier extends Notifier<ProfileState> {
   final AuthService _authService = AuthService.instance;
-  final ApiService _apiService = ApiService();
+  final ProfileService _profileService = ProfileService.instance;
 
   @override
   ProfileState build() {
@@ -18,7 +18,7 @@ class ProfileNotifier extends Notifier<ProfileState> {
     return const ProfileState();
   }
 
-  /// Load user data from API
+  /// Load user data from local database
   Future<void> _loadUserData() async {
     try {
       state = state.copyWith(isLoading: true, error: null);
@@ -26,9 +26,7 @@ class ProfileNotifier extends Notifier<ProfileState> {
       // Check if user is logged in first
       final isLoggedIn = await _authService.isLoggedIn();
       
-      final currentUserId = await _authService.getCurrentUserId();
-      
-      if (!isLoggedIn || currentUserId == null || currentUserId.isEmpty) {
+      if (!isLoggedIn) {
         state = state.copyWith(
           isLoading: false,
           error: 'Please sign in to view your profile',
@@ -36,96 +34,46 @@ class ProfileNotifier extends Notifier<ProfileState> {
         return;
       }
 
-      // Test API connection first
-
-      final healthResponse = await _apiService.healthCheck();
-
+      // Fetch user data from local database
+      final response = await _profileService.getCurrentProfile();
       
-      // Fetch user data from API with timeout
-      final response = await _apiService.getUserById(currentUserId).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-
-          return ApiResponse(
-            success: false,
-            statusCode: 408,
-            data: null,
-            message: 'Request timeout - please check your connection',
-          );
-        },
-      );
-      
-      if (response.success && response.data != null) {
-        
-        // Extract the actual user data from the API response
-        final userData = response.data!['data'] as Map<String, dynamic>?;
-        if (userData == null) {
-
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Invalid user data structure',
-          );
-          return;
-        }
-        
-        final user = UserModel.fromJson(userData);
+      if (response.success && response.profileData != null) {
+        final userData = response.profileData!;
         
         // Check if user has profile picture
         bool hasProfilePicture = false;
         File? profilePictureFile;
         
         try {
-          final pictureResponse = await _apiService.getProfilePicture(currentUserId);
-          if (pictureResponse.success && pictureResponse.data != null) {
-            final pictureData = pictureResponse.data!['data'] as Map<String, dynamic>?;
-            if (pictureData != null && pictureData['image_url'] != null) {
-              hasProfilePicture = true;
-              // Note: In a real implementation, you'd download and cache the image
-              // For now, we'll just mark that a profile picture exists
+          hasProfilePicture = await _profileService.hasProfilePicture();
+          if (hasProfilePicture) {
+            final picturePath = await _profileService.getProfilePicturePath();
+            if (picturePath != null) {
+              profilePictureFile = File(picturePath);
             }
           }
         } catch (e) {
           // Silently handle profile picture errors - don't want to break the flow
+          // debugPrint('Error loading profile picture: $e');
         }
         
         state = state.copyWith(
-          userName: user.name,
-          userEmail: user.email,
-          userPhoneNumber: user.phoneNumber ?? '',
+          userName: userData['name'] ?? 'User',
+          userEmail: userData['email'] ?? 'user@example.com',
+          userPhoneNumber: userData['phone_number'] ?? '',
           hasProfilePicture: hasProfilePicture,
           profilePictureFile: profilePictureFile,
           isLoading: false,
           error: null,
         );
       } else {
-        // Handle different error scenarios
-        if (response.statusCode == 404) {
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Profile not found. Please complete your profile setup.',
-            userName: 'Profile Not Found',
-            userEmail: 'Complete your profile',
-            userPhoneNumber: '',
-          );
-        } else if (response.statusCode == 408) {
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Request timeout. Please check your internet connection.',
-          );
-        } else if (response.statusCode == 500) {
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Server error. Please try again later.',
-          );
-        } else {
-          state = state.copyWith(
-            isLoading: false,
-            error: response.message.isNotEmpty ? response.message : 'Failed to load user profile',
-          );
-        }
+        state = state.copyWith(
+          isLoading: false,
+          error: response.errorMessage.isNotEmpty ? response.errorMessage : 'Failed to load user profile',
+        );
       }
     } catch (e) {
-      // Handle API errors gracefully
+      // Handle database errors gracefully
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to load profile: ${e.toString()}',
@@ -135,15 +83,11 @@ class ProfileNotifier extends Notifier<ProfileState> {
 
   /// Initialize profile data (call this when profile page loads)
   Future<void> initializeProfile() async {
-
-    
     // Check authentication status first
     try {
       final isLoggedIn = await _authService.isLoggedIn();
-
       
       if (!isLoggedIn) {
-
         state = state.copyWith(
           isLoading: false,
           error: 'Please sign in to view your profile',
@@ -154,18 +98,17 @@ class ProfileNotifier extends Notifier<ProfileState> {
         return;
       }
     } catch (e) {
-
+      // debugPrint('Error checking authentication: $e');
     }
     
-    // First, try to load from API
+    // Load from local database
     await _loadUserData();
     
-    // If still loading after API call, set a fallback state
+    // If still loading after database call, set a fallback state
     if (state.isLoading) {
-
       state = state.copyWith(
         isLoading: false,
-        error: 'Unable to load profile data. Please check your connection.',
+        error: 'Unable to load profile data.',
         userName: 'User',
         userEmail: 'user@example.com',
         userPhoneNumber: '',
@@ -174,7 +117,6 @@ class ProfileNotifier extends Notifier<ProfileState> {
     
     // If we have an error but no user data, try to get user data from secure storage as fallback
     if (state.hasError && (state.userName == 'User' || state.userEmail == 'user@example.com')) {
-
       try {
         final storedName = await _authService.getCurrentUserName();
         final storedEmail = await _authService.getCurrentUserEmail();
@@ -185,15 +127,14 @@ class ProfileNotifier extends Notifier<ProfileState> {
             userEmail: storedEmail ?? 'user@example.com',
             error: null, // Clear the error since we have some data
           );
-
         }
       } catch (e) {
-
+        // debugPrint('Error getting stored user data: $e');
       }
     }
   }
 
-  /// Refresh user data from API
+  /// Refresh user data from local database
   Future<void> refreshUserData() async {
     await _loadUserData();
   }
@@ -208,112 +149,83 @@ class ProfileNotifier extends Notifier<ProfileState> {
     await _loadUserData();
   }
 
-  /// Create user profile if it doesn't exist
-  Future<void> createUserProfile({
-    required String name,
-    required String email,
-    required String password,
-    String? phoneNumber,
-  }) async {
-    try {
-      final currentUserId = await _authService.getCurrentUserId();
-      if (currentUserId == null) {
-        state = state.copyWith(error: 'User not authenticated');
-        return;
-      }
-
-      final response = await _apiService.createUser(
-        name: name,
-        email: email,
-        password: password,
-        phoneNumber: phoneNumber,
-      );
-
-      if (response.success) {
-        // Refresh user data after successful creation
-        await _loadUserData();
-      } else {
-        state = state.copyWith(
-          error: response.message.isNotEmpty ? response.message : 'Failed to create profile',
-        );
-      }
-    } catch (e) {
-      state = state.copyWith(
-        error: 'Failed to create profile: ${e.toString()}',
-      );
-    }
-  }
-
-  /// Update user profile via API
+  /// Update user profile via local database
   Future<void> updateUserProfile({
     String? name,
     String? phoneNumber,
   }) async {
     try {
-      final currentUserId = await _authService.getCurrentUserId();
-      if (currentUserId == null) {
-        state = state.copyWith(error: 'User not authenticated');
-        return;
-      }
+      state = state.copyWith(isLoading: true, error: null);
 
-      final response = await _apiService.updateUser(
-        userId: currentUserId,
+      final response = await _profileService.updateProfile(
         name: name,
         phoneNumber: phoneNumber,
       );
 
       if (response.success) {
-        // Refresh user data after successful update
-        await _loadUserData();
-      } else {
+        // Update state with new data
         state = state.copyWith(
-          error: response.message.isNotEmpty ? response.message : 'Failed to update profile',
-        );
-      }
-    } catch (e) {
-      state = state.copyWith(
-        error: 'Failed to update profile: ${e.toString()}',
-      );
-    }
-  }
-
-  /// Upload profile picture
-  Future<void> uploadProfilePicture(File imageFile) async {
-    try {
-      state = state.copyWith(isLoading: true, error: null);
-      
-      final currentUserId = await _authService.getCurrentUserId();
-      if (currentUserId == null) {
-        state = state.copyWith(
-          isLoading: false,
-          error: 'User not authenticated',
-        );
-        return;
-      }
-
-      // Convert image to base64
-      final bytes = await imageFile.readAsBytes();
-      final base64Image = base64Encode(bytes);
-      final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-      // Upload to API
-      final response = await _apiService.uploadProfilePicture(
-        userId: currentUserId,
-        imageBase64: base64Image,
-        fileName: fileName,
-      );
-
-      if (response.success) {
-        state = state.copyWith(
-          hasProfilePicture: true,
-          profilePictureFile: imageFile,
+          userName: name ?? state.userName,
+          userPhoneNumber: phoneNumber ?? state.userPhoneNumber,
           isLoading: false,
           error: null,
         );
       } else {
         state = state.copyWith(
           isLoading: false,
-          error: response.message.isNotEmpty ? response.message : 'Failed to upload profile picture',
+          error: response.errorMessage.isNotEmpty ? response.errorMessage : 'Failed to update profile',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Failed to update profile: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Upload profile picture to local storage
+  Future<void> uploadProfilePicture(File imageFile) async {
+    try {
+      state = state.copyWith(isLoading: true, error: null);
+      
+      // Get app documents directory
+      final documentsDirectory = await getApplicationDocumentsDirectory();
+      final profilePicturesDir = Directory('${documentsDirectory.path}/profile_pictures');
+      
+      // Create directory if it doesn't exist
+      if (!await profilePicturesDir.exists()) {
+        await profilePicturesDir.create(recursive: true);
+      }
+      
+      // Generate unique filename
+      final fileName = 'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final targetPath = '${profilePicturesDir.path}/$fileName';
+      
+      // Copy file to app directory
+      final targetFile = await imageFile.copy(targetPath);
+      
+      // Update profile picture in database
+      final response = await _profileService.updateProfilePicture(targetPath);
+
+      if (response.success) {
+        state = state.copyWith(
+          hasProfilePicture: true,
+          profilePictureFile: targetFile,
+          isLoading: false,
+          error: null,
+        );
+      } else {
+        // Clean up the copied file if database update failed
+        try {
+          await targetFile.delete();
+        } catch (e) {
+          // debugPrint('Failed to clean up copied file: $e');
+        }
+        
+        state = state.copyWith(
+          isLoading: false,
+          error: response.errorMessage.isNotEmpty ? response.errorMessage : 'Failed to upload profile picture',
         );
       }
     } catch (e) {
@@ -324,22 +236,12 @@ class ProfileNotifier extends Notifier<ProfileState> {
     }
   }
 
-  /// Remove profile picture
+  /// Remove profile picture from local storage
   Future<void> removeProfilePicture() async {
     try {
       state = state.copyWith(isLoading: true, error: null);
-      
-      final currentUserId = await _authService.getCurrentUserId();
-      if (currentUserId == null) {
-        state = state.copyWith(
-          isLoading: false,
-          error: 'User not authenticated',
-        );
-        return;
-      }
 
-      // Delete from API
-      final response = await _apiService.deleteProfilePicture(currentUserId);
+      final response = await _profileService.deleteProfilePicture();
 
       if (response.success) {
         state = state.copyWith(
@@ -351,7 +253,7 @@ class ProfileNotifier extends Notifier<ProfileState> {
       } else {
         state = state.copyWith(
           isLoading: false,
-          error: response.message.isNotEmpty ? response.message : 'Failed to remove profile picture',
+          error: response.errorMessage.isNotEmpty ? response.errorMessage : 'Failed to remove profile picture',
         );
       }
     } catch (e) {
@@ -370,11 +272,21 @@ class ProfileNotifier extends Notifier<ProfileState> {
     );
   }
 
-  /// Update phone number locally (fallback when API fails)
+  /// Update phone number locally
   void updatePhoneNumberLocally(String phoneNumber) {
     state = state.copyWith(
       userPhoneNumber: phoneNumber,
       error: null,
     );
+  }
+
+  /// Get user statistics
+  Future<Map<String, dynamic>> getUserStatistics() async {
+    try {
+      return await _profileService.getUserStatistics();
+    } catch (e) {
+      // debugPrint('Error getting user statistics: $e');
+      return {};
+    }
   }
 }

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../router/route_constants.dart';
 import '../../../router/navigation_helper.dart';
 import '../../../core/services/image_service.dart';
 import '../../../core/services/auth_service.dart';
-import '../../../core/services/api_service.dart';
+import '../../../core/services/profile_service.dart';
 import '../../../core/widgets/custom_notification.dart';
 import '../data/profile_providers.dart';
 import '../data/profile_state.dart';
@@ -22,11 +20,6 @@ class ProfilePage extends ConsumerStatefulWidget {
 class _ProfilePageState extends ConsumerState<ProfilePage> {
   bool _hasInitialized = false;
   
-  // Debug variables
-  bool _showDebugInfo = false;
-  String _debugInfo = '';
-  List<String> _debugLogs = [];
-  String? _lastLoggedState;
 
   @override
   void initState() {
@@ -34,113 +27,26 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     // Initialize profile data when page loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_hasInitialized) {
-        _addDebugLog('🚀 ProfilePage: Initializing profile data...');
         ref.read(profileNotifierProvider.notifier).initializeProfile();
         _hasInitialized = true;
       }
     });
   }
 
-  /// Add debug log entry
-  void _addDebugLog(String message) {
-    final timestamp = DateTime.now().toIso8601String().substring(11, 19);
-    final logEntry = '[$timestamp] $message';
-    setState(() {
-      _debugLogs.add(logEntry);
-      _debugInfo = _debugLogs.join('\n');
-    });
-
-  }
 
   @override
   Widget build(BuildContext context) {
     final profileState = ref.watch(profileDataProvider);
 
-    // Debug logging for profile state changes (only when state actually changes)
-    final currentState = '${profileState.isLoading}_${profileState.hasError}_${profileState.userName}_${profileState.userEmail}';
-    if (_lastLoggedState != currentState) {
-      _lastLoggedState = currentState;
-      _addDebugLog('📊 Profile State - Loading: ${profileState.isLoading}, HasError: ${profileState.hasError}');
-      _addDebugLog('👤 User Data - Name: "${profileState.userName}", Email: "${profileState.userEmail}"');
-      if (profileState.hasError) {
-        _addDebugLog('❌ Error: ${profileState.error}');
-      }
-    }
-
     // Listen to error state and show snackbar
     ref.listen<String?>(profileErrorProvider, (previous, next) {
       if (next != null && next.isNotEmpty) {
-        _addDebugLog('🚨 Error received: $next');
         context.showErrorNotification(next);
       }
     });
 
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-
-    if (profileState.isLoading) {
-      return Scaffold(
-        body: Container(
-          height: screenHeight,
-          width: screenWidth,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF8B0000), // Dark red
-                Color(0xFF4B0082), // Purple
-              ],
-            ),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Simple loading indicator without spinner
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Loading Profile...',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 30),
-                // Back button
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('Go Back'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF8B0000),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
 
     // Show error state with retry button
     if (profileState.hasError) {
@@ -151,7 +57,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           foregroundColor: Colors.white,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => NavigationHelper.pop(context),
           ),
         ),
         body: Container(
@@ -211,71 +117,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Debug button
-                  ElevatedButton.icon(
-                    onPressed: () {
-
-                      ref.read(profileNotifierProvider.notifier).initializeProfile();
-                    },
-                    icon: const Icon(Icons.bug_report),
-                    label: const Text('Debug Init'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Auth check button
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final authService = AuthService.instance;
-                      final isLoggedIn = await authService.isLoggedIn();
-                      final userId = await authService.getCurrentUserId();
-                      final userName = await authService.getCurrentUserName();
-                      final userEmail = await authService.getCurrentUserEmail();
-                      _addDebugLog('🔐 Auth Status - Logged In: $isLoggedIn');
-                      _addDebugLog('🆔 User ID: $userId');
-                      _addDebugLog('👤 Stored Name: $userName');
-                      _addDebugLog('📧 Stored Email: $userEmail');
-                    },
-                    icon: const Icon(Icons.security),
-                    label: const Text('Check Auth'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Clear credentials button
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final authService = AuthService.instance;
-                      await authService.clearCredentials();
-                      _addDebugLog('🧹 Credentials cleared - please sign in again');
-                      // Navigate back to sign in
-                      Navigator.of(context).pop();
-                    },
-                    icon: const Icon(Icons.clear),
-                    label: const Text('Clear & Sign Out'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Back button
                   ElevatedButton.icon(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.arrow_back),
@@ -298,188 +139,95 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
 
     return WillPopScope(
-      onWillPop: () async {
-        // Handle Android back button
-        if (Navigator.of(context).canPop()) {
-          context.pop();
-          return false;
-        } else {
-          context.go(RouteConstants.home);
-          return false;
-        }
-      },
+      onWillPop: () async => true,
       child: Scaffold(
         body: Container(
           height: screenHeight,
           width: screenWidth,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
                 Color(0xFF8B0000), // Dark red
                 Color(0xFF4B0082), // Purple
-            ],
+              ],
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-              // Background decorative elements (like sign-in/sign-up pages)
+          child: Stack(
+            children: [
+              // Background decorative elements
               _buildBackgroundDecorations(screenWidth, screenHeight),
-            
+              
               // Main content
-            SafeArea(
-                child: Stack(
-                  children: [
-                    SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.08,
-                        vertical: screenHeight * 0.01,
-                      ),
-              child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                          // Header section
-                          _buildHeader(screenWidth, screenHeight),
-                          
-                          SizedBox(height: screenHeight * 0.03),
-                          
-                          // Profile content container with glassmorphism
-                          Container(
-                            padding: EdgeInsets.all(screenWidth * 0.04),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
-                                width: 1,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                      ),
-              child: RefreshIndicator(
-                onRefresh: () => ref.read(profileNotifierProvider.notifier).refreshUserData(),
+              SafeArea(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenWidth * 0.05,
+                    vertical: screenHeight * 0.01,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Header section
+                      _buildHeader(screenWidth, screenHeight),
+                      
+                      SizedBox(height: screenHeight * 0.03),
+                      
+                      // Profile content container with glassmorphism
+                      Container(
+                        padding: EdgeInsets.all(screenWidth * 0.03),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.2),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 15,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: RefreshIndicator(
+                          onRefresh: () => ref.read(profileNotifierProvider.notifier).refreshUserData(),
                           child: Column(
                             children: [
                               // Profile Picture Section
                               _buildProfilePictureSection(context, ref, screenWidth, screenHeight, profileState),
                               
-                              // User Info Section
-                              _buildUserInfoSection(screenWidth, screenHeight, profileState),
+                      SizedBox(height: screenHeight * 0.02),
+                      
+                      // User Stats Cards
+                      _buildUserStatsCards(screenWidth, screenHeight, profileState),
+                      
+                      SizedBox(height: screenHeight * 0.02),
+                      
+                      // Quick Actions
+                      _buildQuickActions(context, ref, screenWidth, screenHeight),
+                      
+                      SizedBox(height: screenHeight * 0.02),
+                      
+                      // Account Settings
+                      _buildAccountSettings(context, ref, screenWidth, screenHeight),
                               
-                                    // Account Settings Section (moved near user info if no phone number)
-                                    _buildAccountSettingsSection(context, ref, screenWidth, screenHeight, profileState),
-                                    
-                                    // Other Menu Sections
-                                    _buildOtherMenuSections(context, screenWidth, screenHeight),
-                                    
-                                    const SizedBox(height: 20),
-                                    
-                                    // Debug Toggle Button
-                                    Container(
-                                      margin: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          ElevatedButton.icon(
-                                            onPressed: () {
-                                              setState(() {
-                                                _showDebugInfo = !_showDebugInfo;
-                                              });
-                                            },
-                                            icon: Icon(_showDebugInfo ? Icons.visibility_off : Icons.bug_report),
-                                            label: Text(_showDebugInfo ? 'Hide Debug' : 'Show Debug'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.orange,
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          ElevatedButton.icon(
-                                            onPressed: () async {
-                                              await _testApiConnection();
-                                            },
-                                            icon: const Icon(Icons.wifi),
-                                            label: const Text('Test API'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.blue,
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                            ),
-                                          ),
+                              SizedBox(height: screenHeight * 0.02),
                             ],
                           ),
                         ),
-                                    
-                                    // Debug Information Panel
-                                    if (_showDebugInfo) ...[
-                                      const SizedBox(height: 16),
-                                      Container(
-                                        margin: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black87,
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.orange, width: 1),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              '🐛 Debug Information',
-                                              style: TextStyle(
-                                                color: Colors.orange,
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Container(
-                                              height: 200,
-                                              width: double.infinity,
-                                              padding: const EdgeInsets.all(8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black,
-                                                borderRadius: BorderRadius.circular(4),
-                                                border: Border.all(color: Colors.grey, width: 0.5),
-                                              ),
-                                              child: SingleChildScrollView(
-                                                child: Text(
-                                                  _debugInfo.isEmpty ? 'No debug information yet...' : _debugInfo,
-                                                  style: const TextStyle(
-                                                    color: Colors.green,
-                                                    fontFamily: 'monospace',
-                                                    fontSize: 12,
-                                                                                                 ),
-                                              ),
-                                            ),
-                                        )],
-                                        ),
-                                      ),
-                                    ],
-                                ],
-                              ),
-                            ),
-                      ),],
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-              ],
-            ),
-          ),
-        
-      ),
-    
-  
-);
+    );
 
   }
 
@@ -527,144 +275,16 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  /// Builds decorative circles like in sign-in/sign-up pages
-  Widget _buildDecorativeCircles(double screenWidth, double screenHeight) {
-    return Stack(
-      children: [
-        // Large circle - top right
-        Positioned(
-          top: screenHeight * 0.05,
-          right: -screenWidth * 0.1,
-          child: Container(
-            width: screenWidth * 0.4,
-            height: screenWidth * 0.4,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.1),
-                  Colors.white.withOpacity(0.05),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Medium circle - top right
-        Positioned(
-          top: screenHeight * 0.1,
-          right: screenWidth * 0.1,
-          child: Container(
-            width: screenWidth * 0.2,
-            height: screenWidth * 0.2,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.08),
-                  Colors.white.withOpacity(0.03),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Small circle - top right
-        Positioned(
-          top: screenHeight * 0.15,
-          right: screenWidth * 0.3,
-          child: Container(
-            width: screenWidth * 0.15,
-            height: screenWidth * 0.15,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.06),
-                  Colors.white.withOpacity(0.02),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Tiny circle - top right
-        Positioned(
-          top: screenHeight * 0.08,
-          right: screenWidth * 0.5,
-          child: Container(
-            width: screenWidth * 0.1,
-            height: screenWidth * 0.1,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.04),
-                  Colors.white.withOpacity(0.01),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Additional circles for more visual interest
-        Positioned(
-          top: screenHeight * 0.2,
-          right: screenWidth * 0.05,
-          child: Container(
-            width: screenWidth * 0.12,
-            height: screenWidth * 0.12,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.05),
-                  Colors.white.withOpacity(0.02),
-                ],
-              ),
-            ),
-          ),
-        ),
-        // Left side circle for balance
-        Positioned(
-          top: screenHeight * 0.12,
-          left: -screenWidth * 0.05,
-          child: Container(
-            width: screenWidth * 0.18,
-            height: screenWidth * 0.18,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white.withOpacity(0.07),
-                  Colors.white.withOpacity(0.03),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   /// Build header section (like sign-in/sign-up pages)
   Widget _buildHeader(double screenWidth, double screenHeight) {
     return Row(
       children: [
         // Back button
         GestureDetector(
-          onTap: () => context.go(RouteConstants.home),
+          onTap: () => NavigationHelper.pop(context),
           child: Container(
-            width: screenWidth * 0.12,
-            height: screenWidth * 0.12,
+            width: screenWidth * 0.1,
+            height: screenWidth * 0.1,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: Colors.white.withOpacity(0.2),
@@ -676,7 +296,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             child: Icon(
               Icons.arrow_back,
               color: Colors.white,
-              size: screenWidth * 0.06,
+              size: screenWidth * 0.05,
             ),
           ),
         ),
@@ -687,7 +307,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             'Profile',
             style: TextStyle(
               color: Colors.white,
-              fontSize: screenHeight * 0.028,
+              fontSize: screenHeight * 0.024,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.5,
             ),
@@ -695,8 +315,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
         ),
         // Profile icon (optional)
         Container(
-          width: screenWidth * 0.12,
-          height: screenWidth * 0.12,
+          width: screenWidth * 0.1,
+          height: screenWidth * 0.1,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white.withOpacity(0.2),
@@ -708,72 +328,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           child: Icon(
             Icons.person,
             color: Colors.white,
-            size: screenWidth * 0.06,
+            size: screenWidth * 0.05,
           ),
         ),
       ],
     );
   }
 
-  /// Builds the custom app bar
-  Widget _buildAppBar(BuildContext context, double screenWidth) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: screenWidth * 0.05,
-        vertical: screenWidth * 0.03,
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              // Always go to home page
-                context.go(RouteConstants.home);
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.arrow_back_ios_new,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-          SizedBox(width: screenWidth * 0.04),
-          const Text(
-            'Profile',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Spacer(),
-          // Home button
-          GestureDetector(
-            onTap: () {
-              context.go(RouteConstants.home);
-            },
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.home,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// Builds the profile picture section
   Widget _buildProfilePictureSection(BuildContext context, WidgetRef ref, double screenWidth, double screenHeight, ProfileState profileState) {
@@ -781,28 +342,25 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       margin: EdgeInsets.only(bottom: screenHeight * 0.03),
       child: Column(
         children: [
-          // Profile Picture with Edit Icon
-          Stack(
-        children: [
           // Profile Picture
           Center(
             child: GestureDetector(
               onTap: () => _showProfilePictureOptions(context, ref, profileState),
               child: Container(
-                    width: screenWidth * 0.25,
-                    height: screenWidth * 0.25,
+                width: screenWidth * 0.2,
+                height: screenWidth * 0.2,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                        color: Colors.white.withOpacity(0.4),
-                        width: 3,
+                    color: Colors.white.withOpacity(0.4),
+                    width: 3,
                   ),
                   boxShadow: [
                     BoxShadow(
-                          color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withOpacity(0.2),
                       spreadRadius: 2,
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
+                      blurRadius: 15,
+                      offset: const Offset(0, 8),
                     ),
                   ],
                 ),
@@ -820,38 +378,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               ),
             ),
           ),
-              // Camera Icon - positioned on the edge of the profile picture circle
-          Positioned(
-            bottom: 0,
-                right: 0,
-            child: GestureDetector(
-              onTap: () => _showProfilePictureOptions(context, ref, profileState),
-              child: Container(
-                    width: 36,
-                    height: 36,
-                decoration: BoxDecoration(
-                      color: const Color(0xFF8B0000),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                          color: Colors.black.withOpacity(0.3),
-                      spreadRadius: 1,
-                          blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.camera_alt,
-                  color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
           
           // User Name and Email below profile picture
           Container(
@@ -862,13 +388,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 Text(
                   profileState.userName.isNotEmpty ? profileState.userName : 'User',
                   style: TextStyle(
-                    fontSize: screenHeight * 0.026,
+                    fontSize: screenHeight * 0.022,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
                   textAlign: TextAlign.center,
                 ),
-                SizedBox(height: screenHeight * 0.008),
+                SizedBox(height: screenHeight * 0.006),
                 // User Phone Number (if available)
                 if (profileState.userPhoneNumber.isNotEmpty)
                   Column(
@@ -876,20 +402,20 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                       Text(
                         profileState.userPhoneNumber,
                         style: TextStyle(
-                          fontSize: screenHeight * 0.020,
+                          fontSize: screenHeight * 0.016,
                           color: Colors.white.withOpacity(0.8),
                           fontWeight: FontWeight.w500,
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      SizedBox(height: screenHeight * 0.008),
+                      SizedBox(height: screenHeight * 0.006),
                     ],
                   ),
                 // User Email
                 Text(
                   profileState.userEmail.isNotEmpty ? profileState.userEmail : 'user@example.com',
                   style: TextStyle(
-                    fontSize: screenHeight * 0.018,
+                    fontSize: screenHeight * 0.014,
                     color: Colors.white.withOpacity(0.7),
                     fontWeight: FontWeight.w400,
                   ),
@@ -929,93 +455,179 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  /// Builds user information section
-  Widget _buildUserInfoSection(double screenWidth, double screenHeight, ProfileState profileState) {
+  /// Build user stats cards
+  Widget _buildUserStatsCards(double screenWidth, double screenHeight, ProfileState profileState) {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            'Security Level',
+            'High',
+            Icons.security,
+            const Color(0xFF8B0000),
+            screenWidth,
+            screenHeight,
+          ),
+        ),
+        SizedBox(width: screenWidth * 0.03),
+        Expanded(
+          child: _buildStatCard(
+            'Account Status',
+            'Active',
+            Icons.check_circle,
+            const Color(0xFF4B0082),
+            screenWidth,
+            screenHeight,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build individual stat card
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, double screenWidth, double screenHeight) {
     return Container(
-      margin: EdgeInsets.symmetric(
-        horizontal: screenWidth * 0.05,
-        vertical: screenHeight * 0.03,
+      padding: EdgeInsets.all(screenWidth * 0.03),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          // This section is now empty - phone number is only shown in profile picture section
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Icon(icon, color: Colors.white, size: 24),
+          ),
+          SizedBox(height: screenHeight * 0.008),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: screenHeight * 0.018,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.003),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: screenHeight * 0.012,
+              color: Colors.white.withOpacity(0.8),
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
   }
 
-  /// Builds account settings section (positioned near user info)
-  Widget _buildAccountSettingsSection(BuildContext context, WidgetRef ref, double screenWidth, double screenHeight, ProfileState profileState) {
-    return Container(
-      margin: EdgeInsets.only(
-        top: screenHeight * 0.02,
-        bottom: screenHeight * 0.03,
-      ),
-      child: _buildMenuSection(
-          'Account Settings',
-          [
-            _buildMenuItem(
-              icon: Icons.person_outline_rounded,
-              title: 'My Account',
-            subtitle: '',
-              onTap: () => _showComingSoon(context, 'My Account'),
-            ),
-            _buildMenuItem(
-              icon: Icons.phone_outlined,
-              title: 'Phone Number',
-            subtitle: '',
-            onTap: () => _showPhoneNumberDialog(context),
-            ),
-            _buildMenuItem(
-              icon: Icons.lock_outline_rounded,
-              title: 'Change Password',
-            subtitle: '',
-              onTap: () => _showComingSoon(context, 'Change Password'),
-            ),
-            _buildMenuItem(
-              icon: Icons.fingerprint,
-              title: 'Biometric Settings',
-            subtitle: '',
-              onTap: () => NavigationHelper.goToBiometricSettings(context),
-            ),
-          ],
-        screenWidth,
-        screenHeight,
-      ),
-    );
-  }
-
-  /// Builds other menu sections
-  Widget _buildOtherMenuSections(BuildContext context, double screenWidth, double screenHeight) {
-    return Column(
-      children: [
-        // Add other menu sections here if needed in the future
+  /// Build quick actions section
+  Widget _buildQuickActions(BuildContext context, WidgetRef ref, double screenWidth, double screenHeight) {
+    return _buildSectionCard(
+      'Quick Actions',
+      [
+        _buildModernMenuItem(
+          icon: Icons.phone_outlined,
+          title: 'Update Phone',
+          subtitle: 'Change your phone number',
+          onTap: () => _showPhoneNumberDialog(context),
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+        ),
+        _buildModernMenuItem(
+          icon: Icons.fingerprint,
+          title: 'Biometric Settings',
+          subtitle: 'Manage fingerprint & face ID',
+          onTap: () => NavigationHelper.goToBiometricSettings(context),
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+        ),
       ],
+      screenWidth,
+      screenHeight,
     );
   }
 
-  /// Builds a menu section with title and items
-  Widget _buildMenuSection(String title, List<Widget> items, double screenWidth, double screenHeight) {
+  /// Build account settings section
+  Widget _buildAccountSettings(BuildContext context, WidgetRef ref, double screenWidth, double screenHeight) {
+    return _buildSectionCard(
+      'Account Settings',
+      [
+        _buildModernMenuItem(
+          icon: Icons.person_outline_rounded,
+          title: 'My Account',
+          subtitle: 'Manage your account details',
+          onTap: () => _showComingSoon(context, 'My Account'),
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+        ),
+        _buildModernMenuItem(
+          icon: Icons.lock_outline_rounded,
+          title: 'Change Password',
+          subtitle: 'Update your password',
+          onTap: () => _showComingSoon(context, 'Change Password'),
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+        ),
+        _buildModernMenuItem(
+          icon: Icons.security,
+          title: 'Security Settings',
+          subtitle: 'Manage security preferences',
+          onTap: () => _showComingSoon(context, 'Security Settings'),
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+        ),
+      ],
+      screenWidth,
+      screenHeight,
+    );
+  }
+
+
+  /// Build section card with title and items
+  Widget _buildSectionCard(String title, List<Widget> items, double screenWidth, double screenHeight) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8),
+      margin: EdgeInsets.only(bottom: screenHeight * 0.02),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 8, bottom: 12),
+            padding: EdgeInsets.only(left: screenWidth * 0.02, bottom: screenHeight * 0.012),
             child: Text(
               title,
-              style: const TextStyle(
-                fontSize: 18,
+              style: TextStyle(
+                fontSize: screenHeight * 0.018,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
+                letterSpacing: 0.5,
               ),
             ),
           ),
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: Colors.white.withOpacity(0.2),
                 width: 1,
@@ -1024,8 +636,8 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 BoxShadow(
                   color: Colors.black.withOpacity(0.1),
                   spreadRadius: 1,
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+                  blurRadius: 15,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
@@ -1036,78 +648,101 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  /// Builds a menu item
-  Widget _buildMenuItem({
+  /// Build modern menu item
+  Widget _buildModernMenuItem({
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required double screenWidth,
+    required double screenHeight,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8, left: 8, right: 8, top: 4),
+      margin: EdgeInsets.only(bottom: screenHeight * 0.01),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
+        color: Colors.white.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: Colors.white.withOpacity(0.2),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            spreadRadius: 1,
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: InkWell(
-      onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-      child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-                width: 40,
-                height: 40,
-              decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.3),
-                    width: 1,
-                  ),
-              ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                  size: 20,
-              ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: screenWidth * 0.03,
+              vertical: screenHeight * 0.015,
             ),
-              const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                        color: Colors.white,
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                    if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 14,
-                          color: Colors.white.withOpacity(0.7),
-                    ),
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 22,
                   ),
-                ],
-              ),
+                ),
+                SizedBox(width: screenWidth * 0.03),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: screenHeight * 0.016,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(height: screenHeight * 0.004),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: screenHeight * 0.012,
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
-            Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-                color: Colors.white.withOpacity(0.6),
-            ),
-          ],
           ),
         ),
       ),
@@ -1160,103 +795,254 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     );
   }
 
-  /// Shows phone number update dialog
+  /// Shows phone number update dialog with glassmorphism design
   void _showPhoneNumberDialog(BuildContext context) {
     final TextEditingController phoneController = TextEditingController();
     final profileState = ref.read(profileDataProvider);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
     
     // Pre-fill with current phone number if available
     phoneController.text = profileState.userPhoneNumber;
 
     showDialog(
       context: context,
+      barrierDismissible: true,
       builder: (BuildContext context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8B0000), Color(0xFF4B0082)],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.phone_outlined,
-                  color: Colors.white,
-                  size: 20,
-                ),
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: screenWidth * 0.85,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF8B0000), // Dark red
+                  Color(0xFF4B0082), // Purple
+                ],
               ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Update Phone',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 300,
-              maxHeight: 200,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: phoneController,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    hintText: 'Enter your phone number',
-                    prefixIcon: const Icon(Icons.phone),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF8B0000)),
-                    ),
-                  ),
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.done,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.grey[600],
-              ),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final phoneNumber = phoneController.text.trim();
-                if (phoneNumber.isNotEmpty) {
-                  Navigator.of(context).pop();
-                  await _updatePhoneNumber(context, phoneNumber);
-                } else {
-                  context.showErrorNotification('Please enter a phone number');
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8B0000),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.2),
+                  width: 1,
                 ),
               ),
-              child: const Text('Update'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header with glassmorphism
+                  Container(
+                    padding: EdgeInsets.all(screenWidth * 0.05),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.phone_outlined,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        SizedBox(width: screenWidth * 0.03),
+                        Expanded(
+                          child: Text(
+                            'Update Phone Number',
+                            style: TextStyle(
+                              fontSize: screenHeight * 0.022,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  // Content with glassmorphism
+                  Padding(
+                    padding: EdgeInsets.all(screenWidth * 0.05),
+                    child: Column(
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: TextFormField(
+                            controller: phoneController,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number',
+                              labelStyle: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 14,
+                              ),
+                              hintText: 'Enter your phone number',
+                              hintStyle: TextStyle(
+                                color: Colors.white.withOpacity(0.6),
+                                fontSize: 14,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.phone,
+                                color: Colors.white.withOpacity(0.8),
+                                size: 20,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.white.withOpacity(0.5),
+                                  width: 1,
+                                ),
+                              ),
+                              filled: true,
+                              fillColor: Colors.transparent,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            textInputAction: TextInputAction.done,
+                          ),
+                        ),
+                        
+                        SizedBox(height: screenHeight * 0.03),
+                        
+                        // Action buttons with glassmorphism
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.2),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: screenHeight * 0.015,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Cancel',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.8),
+                                      fontSize: screenHeight * 0.018,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.03),
+                            Expanded(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.white.withOpacity(0.2),
+                                      Colors.white.withOpacity(0.1),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    final phoneNumber = phoneController.text.trim();
+                                    if (phoneNumber.isNotEmpty) {
+                                      Navigator.of(context).pop();
+                                      await _updatePhoneNumber(context, phoneNumber);
+                                    } else {
+                                      context.showErrorNotification('Please enter a phone number');
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: screenHeight * 0.015,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Update',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: screenHeight * 0.018,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         );
       },
     );
@@ -1270,21 +1056,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       barrierDismissible: false,
       builder: (BuildContext context) {
         return const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B0000)),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Updating phone number...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
-              ),
-            ],
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B0000)),
+            strokeWidth: 3,
           ),
         );
       },
@@ -1312,15 +1086,9 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
 
       // Update phone number via API with timeout
-      final apiService = ApiService();
-      final response = await apiService.updateUser(
-        userId: userId,
+      final profileService = ProfileService.instance;
+      final response = await profileService.updateProfile(
         phoneNumber: phoneNumber,
-      ).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          throw Exception('Update timeout - please check your connection');
-        },
       );
 
       if (mounted) {
@@ -1334,7 +1102,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           context.showSuccessNotification('Phone number updated successfully!');
         } else {
           // Try to update locally as fallback
-          _addDebugLog('⚠️ API update failed, trying local update...');
           try {
             // Update the profile state anyway to show the change locally
             ref.read(profileNotifierProvider.notifier).updatePhoneNumberLocally(phoneNumber);
@@ -1353,31 +1120,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
     }
   }
 
-  /// Test API connection
-  Future<void> _testApiConnection() async {
-    try {
-      _addDebugLog('🔍 Testing API connection...');
-      
-      final apiService = ApiService();
-      final response = await apiService.healthCheck().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('API connection timeout');
-        },
-      );
-      
-      if (response.success) {
-        _addDebugLog('✅ API connection successful!');
-        context.showSuccessNotification('API connection successful!');
-      } else {
-        _addDebugLog('❌ API connection failed: ${response.message}');
-        context.showErrorNotification('API connection failed: ${response.message}');
-      }
-    } catch (e) {
-      _addDebugLog('❌ API connection error: $e');
-      context.showErrorNotification('API connection error: $e');
-    }
-  }
 
   /// Shows profile picture options
   void _showProfilePictureOptions(BuildContext context, WidgetRef ref, ProfileState profileState) {
@@ -1413,7 +1155,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 icon: Icons.camera_alt,
                 title: 'Take Photo',
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.of(context).pop();
                   _pickImage(context, ImageSource.camera, ref);
                 },
               ),
@@ -1421,7 +1163,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 icon: Icons.photo_library,
                 title: 'Choose from Gallery',
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.of(context).pop();
                   _pickImage(context, ImageSource.gallery, ref);
                 },
               ),
@@ -1430,7 +1172,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                   icon: Icons.delete,
                   title: 'Remove Photo',
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.of(context).pop();
                     _removeProfilePicture(context, ref);
                   },
                 ),
