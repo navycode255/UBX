@@ -21,3 +21,5 @@ if (!(Test-Path $publicLink)) {
 Write-Host "Storage setup complete!" -ForegroundColor Green
 Write-Host "Profile pictures will be stored in: storage/app/public/profile-pictures" -ForegroundColor Cyan
 Write-Host "Public access via: /storage/profile-pictures/" -ForegroundColor Cyan
+
+
