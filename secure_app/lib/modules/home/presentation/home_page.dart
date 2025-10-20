@@ -1,98 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/services/auth_service.dart';
-import '../../../core/services/biometric_service.dart';
 import '../../../core/widgets/custom_notification.dart';
-import '../../../router/navigation_helper.dart';
 import '../../../router/route_constants.dart';
+import '../data/home_providers.dart';
+import '../data/home_state.dart';
 
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final AuthService _authService = AuthService.instance;
-  final BiometricService _biometricService = BiometricService.instance;
-  Map<String, String?> _userData = {};
-  bool _isLoading = true;
-  bool _isBiometricEnabled = false;
-  String _biometricType = 'Biometric';
+class _HomePageState extends ConsumerState<HomePage> {
+  bool _hasInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    // Initialize home data when page loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_hasInitialized) {
+        ref.read(HomeProviders.homeNotifierProvider.notifier).loadUserData();
+        _hasInitialized = true;
+      }
+    });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Refresh biometric status when returning to this page (e.g., from biometric settings)
-    _refreshBiometricStatus();
-  }
-
-  /// Refresh only biometric status (more efficient than reloading all data)
-  Future<void> _refreshBiometricStatus() async {
-    try {
-      final isBiometricEnabled = await _biometricService.isBiometricLoginEnabled();
-      final biometricType = await _biometricService.getPrimaryBiometricType();
-      
-      if (mounted) {
-        setState(() {
-          _isBiometricEnabled = isBiometricEnabled;
-          _biometricType = biometricType;
-        });
-      }
-    } catch (e) {
-      // Silently handle errors for status refresh
-
-    }
-  }
-
-  /// Load user data from secure storage
-  Future<void> _loadUserData() async {
-    try {
-      final userData = await _authService.getAllUserData();
-      final isBiometricEnabled = await _biometricService.isBiometricLoginEnabled();
-      final biometricType = await _biometricService.getPrimaryBiometricType();
-      
-      setState(() {
-        _userData = userData;
-        _isBiometricEnabled = isBiometricEnabled;
-        _biometricType = biometricType;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
-        context.showErrorNotification('Failed to load user data: ${e.toString()}');
-      }
-    }
-  }
-
-  /// Handle logout
-  Future<void> _handleLogout() async {
-    try {
-      await _authService.signOut();
-      if (mounted) {
-        context.showSuccessNotification('Logged out successfully');
-        // Navigate to sign in page
-        NavigationHelper.goToSignIn(context);
-      }
-    } catch (e) {
-      if (mounted) {
-        context.showErrorNotification('Logout failed: ${e.toString()}');
-      }
-    }
+    ref.read(HomeProviders.homeNotifierProvider.notifier).refreshBiometricStatus();
   }
 
   @override
   Widget build(BuildContext context) {
+    final homeState = ref.watch(HomeProviders.homeDataProvider);
+    final isLoading = ref.watch(HomeProviders.homeLoadingProvider);
+    final error = ref.watch(HomeProviders.homeErrorProvider);
+
+    // Listen to error state and show snackbar
+    ref.listen<String?>(HomeProviders.homeErrorProvider, (previous, next) {
+      if (next != null && next.isNotEmpty) {
+        context.showErrorNotification(next);
+      }
+    });
+
     final screenSize = MediaQuery.of(context).size;
     final screenWidth = screenSize.width;
     final screenHeight = screenSize.height;
@@ -151,7 +106,7 @@ class _HomePageState extends State<HomePage> {
             
             // Main content
             SafeArea(
-              child: _isLoading
+              child: isLoading && !homeState.hasUserData
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -191,22 +146,22 @@ class _HomePageState extends State<HomePage> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Header with profile and logout icons
-                          _buildHeader(screenWidth, screenHeight),
+                          _buildHeader(screenWidth, screenHeight, homeState),
                           
                           SizedBox(height: screenHeight * 0.03),
                           
                           // Security status card
-                          _buildSecurityStatusCard(screenWidth, screenHeight),
+                          _buildSecurityStatusCard(screenWidth, screenHeight, homeState),
                           
                           SizedBox(height: screenHeight * 0.025),
                           
                           // User info card
-                          _buildUserInfoCard(screenWidth, screenHeight),
+                          _buildUserInfoCard(screenWidth, screenHeight, homeState),
                           
                           SizedBox(height: screenHeight * 0.025),
                           
                           // Security features card
-                          _buildSecurityFeaturesCard(screenWidth, screenHeight),
+                          _buildSecurityFeaturesCard(screenWidth, screenHeight, homeState),
                           
                           SizedBox(height: screenHeight * 0.025),
                           
@@ -224,8 +179,21 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Handle logout
+  Future<void> _handleLogout() async {
+    try {
+      // Clear home state
+      ref.read(HomeProviders.homeNotifierProvider.notifier).state = const HomeState();
+      
+      // Navigate to sign in
+      context.go(RouteConstants.signIn);
+    } catch (e) {
+      context.showErrorNotification('Logout failed: ${e.toString()}');
+    }
+  }
+
   /// Build header with profile and logout icons
-  Widget _buildHeader(double screenWidth, double screenHeight) {
+  Widget _buildHeader(double screenWidth, double screenHeight, homeState) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -280,7 +248,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             // Profile button
             GestureDetector(
-              onTap: () => context.go(RouteConstants.profile),
+              onTap: () => context.push(RouteConstants.profile),
               child: Container(
                 width: screenWidth * 0.12,
                 height: screenWidth * 0.12,
@@ -329,7 +297,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Build security status card
-  Widget _buildSecurityStatusCard(double screenWidth, double screenHeight) {
+  Widget _buildSecurityStatusCard(double screenWidth, double screenHeight, homeState) {
     return Container(
       padding: EdgeInsets.all(screenWidth * 0.05),
       decoration: BoxDecoration(
@@ -387,11 +355,11 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: _buildSecurityIndicator(
                   'Biometric',
-                  _isBiometricEnabled ? 'Enabled' : 'Disabled',
-                  _biometricType.toLowerCase().contains('face') 
+                  homeState.isBiometricEnabled ? 'Enabled' : 'Disabled',
+                  homeState.biometricType.toLowerCase().contains('face') 
                       ? Icons.face 
                       : Icons.fingerprint,
-                  _isBiometricEnabled ? Colors.green : Colors.orange,
+                  homeState.isBiometricEnabled ? Colors.green : Colors.orange,
                   screenWidth,
                   screenHeight,
                 ),
@@ -453,7 +421,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Build user info card
-  Widget _buildUserInfoCard(double screenWidth, double screenHeight) {
+  Widget _buildUserInfoCard(double screenWidth, double screenHeight, homeState) {
     return Container(
       padding: EdgeInsets.all(screenWidth * 0.05),
       decoration: BoxDecoration(
@@ -495,8 +463,8 @@ class _HomePageState extends State<HomePage> {
           SizedBox(height: screenHeight * 0.02),
           
           // User details
-          _buildUserDetail('Name', _userData['name'] ?? 'Not available', screenHeight),
-          _buildUserDetail('Email', _userData['email'] ?? 'Not available', screenHeight),
+          _buildUserDetail('Name', homeState.userName, screenHeight),
+          _buildUserDetail('Email', homeState.userEmail, screenHeight),
         ],
       ),
     );
@@ -536,7 +504,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// Build security features card
-  Widget _buildSecurityFeaturesCard(double screenWidth, double screenHeight) {
+  Widget _buildSecurityFeaturesCard(double screenWidth, double screenHeight, homeState) {
     return Container(
       padding: EdgeInsets.all(screenWidth * 0.05),
       decoration: BoxDecoration(
@@ -560,7 +528,7 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Icon(
-                Icons.security_outlined,
+                Icons.security,
                 color: Colors.white,
                 size: screenWidth * 0.06,
               ),
@@ -577,30 +545,26 @@ class _HomePageState extends State<HomePage> {
           ),
           SizedBox(height: screenHeight * 0.02),
           
-          // Feature list
-          _buildFeatureItem(
-            'Data Encryption',
-            'All sensitive data is encrypted at rest',
-            Icons.lock_outline,
+          // Security features list
+          _buildSecurityFeature(
+            'App Lockout',
+            'Enabled',
+            Icons.lock_clock,
             Colors.green,
             screenHeight,
           ),
-          _buildFeatureItem(
-            'Secure Transmission',
-            'All API communication uses HTTPS',
-            Icons.wifi_protected_setup,
-            Colors.blue,
+          _buildSecurityFeature(
+            'Data Encryption',
+            'Active',
+            Icons.enhanced_encryption,
+            Colors.green,
             screenHeight,
           ),
-          _buildFeatureItem(
-            'Biometric Authentication',
-            _isBiometricEnabled 
-                ? 'Biometric login is enabled'
-                : 'Biometric login is disabled',
-            _biometricType.toLowerCase().contains('face') 
-                ? Icons.face 
-                : Icons.fingerprint,
-            _isBiometricEnabled ? Colors.green : Colors.orange,
+          _buildSecurityFeature(
+            'Secure Storage',
+            'Protected',
+            Icons.storage,
+            Colors.green,
             screenHeight,
           ),
         ],
@@ -608,53 +572,40 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Build feature item
-  Widget _buildFeatureItem(
-    String title,
-    String description,
+  /// Build security feature row
+  Widget _buildSecurityFeature(
+    String feature,
+    String status,
     IconData icon,
-    Color color,
+    Color statusColor,
     double screenHeight,
   ) {
     return Padding(
-      padding: EdgeInsets.only(bottom: screenHeight * 0.015),
+      padding: EdgeInsets.only(bottom: screenHeight * 0.012),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 20,
+          Icon(
+            icon,
+            color: statusColor,
+            size: screenHeight * 0.02,
+          ),
+          SizedBox(width: screenHeight * 0.015),
+          Expanded(
+            child: Text(
+              feature,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.9),
+                fontSize: screenHeight * 0.015,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-          SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: screenHeight * 0.016,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  description,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.7),
-                    fontSize: screenHeight * 0.012,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
+          Text(
+            status,
+            style: TextStyle(
+              color: statusColor,
+              fontSize: screenHeight * 0.013,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ],
@@ -687,7 +638,7 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Icon(
-                Icons.settings_outlined,
+                Icons.dashboard,
                 color: Colors.white,
                 size: screenWidth * 0.06,
               ),
@@ -711,7 +662,7 @@ class _HomePageState extends State<HomePage> {
                 child: _buildActionButton(
                   'Profile Settings',
                   Icons.person_outline,
-                  () => context.go(RouteConstants.profile),
+                  () => context.push(RouteConstants.profile),
                   screenWidth,
                   screenHeight,
                 ),
@@ -719,13 +670,9 @@ class _HomePageState extends State<HomePage> {
               SizedBox(width: screenWidth * 0.03),
               Expanded(
                 child: _buildActionButton(
-                  'Security Settings',
-                  Icons.security_outlined,
-                  () async {
-                    await context.push(RouteConstants.biometricSettings);
-                    // Refresh biometric status when returning from settings
-                    _refreshBiometricStatus();
-                  },
+                  'Biometric Settings',
+                  Icons.fingerprint,
+                  () => context.push(RouteConstants.biometricSettings),
                   screenWidth,
                   screenHeight,
                 ),
@@ -737,9 +684,9 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Build action button
+  /// Build individual action button
   Widget _buildActionButton(
-    String label,
+    String title,
     IconData icon,
     VoidCallback onTap,
     double screenWidth,
@@ -748,10 +695,7 @@ class _HomePageState extends State<HomePage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(
-          vertical: screenHeight * 0.015,
-          horizontal: screenWidth * 0.03,
-        ),
+        padding: EdgeInsets.all(screenHeight * 0.02),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
@@ -765,17 +709,17 @@ class _HomePageState extends State<HomePage> {
             Icon(
               icon,
               color: Colors.white,
-              size: screenWidth * 0.05,
+              size: screenWidth * 0.08,
             ),
-            SizedBox(height: screenHeight * 0.008),
+            SizedBox(height: screenHeight * 0.01),
             Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
+              title,
+              style: const TextStyle(
                 color: Colors.white,
-                fontSize: screenHeight * 0.012,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
