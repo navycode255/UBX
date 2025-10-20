@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../router/navigation_helper.dart';
+import '../../../router/route_constants.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/widgets/custom_notification.dart';
 
@@ -21,10 +23,6 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _isLoading = false;
   final AuthService _authService = AuthService.instance;
   
-  // Debug variables
-  bool _showDebugInfo = false;
-  String _debugInfo = '';
-  List<String> _debugLogs = [];
 
   @override
   void dispose() {
@@ -41,12 +39,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
     setState(() {
       _isLoading = true;
-      _debugLogs.clear();
     });
-
-    _addDebugLog('🚀 Starting sign up process...');
-    _addDebugLog('📧 Email: ${_emailController.text.trim()}');
-    _addDebugLog('👤 Name: ${_nameController.text.trim()}');
 
     try {
       final result = await _authService.signUp(
@@ -55,35 +48,25 @@ class _SignUpPageState extends State<SignUpPage> {
         name: _nameController.text.trim(),
       );
 
-      _addDebugLog('🔐 Sign up result: ${result.isSuccess}');
-      _addDebugLog('📝 Message: ${result.message}');
-
       if (mounted) {
         if (result.isSuccess) {
-          _addDebugLog('🎉 Sign up successful! Enabling biometric login...');
-          
-          // Show a brief message about biometric being enabled
+          // Show success message
           context.showSuccessNotification(
-            'Account created! Biometric login enabled. You can now use fingerprint/face to sign in next time.',
+            'Account created successfully! You are now signed in.',
           );
-          
-          _addDebugLog('🎉 Biometric login enabled! Navigating to home...');
           
           // Small delay to show the message
           await Future.delayed(const Duration(milliseconds: 1500));
-          NavigationHelper.goToHome(context);
+          NavigationHelper.goAfterLogin(context);
         } else {
-          _addDebugLog('❌ Sign up failed: ${result.message}');
           context.showErrorNotification('Sign up failed: ${result.message}');
         }
       }
     } catch (e) {
-      _addDebugLog('💥 Sign up error: ${e.toString()}');
       if (mounted) {
         context.showErrorNotification('Sign up failed: ${e.toString()}');
       }
     } finally {
-      _addDebugLog('🏁 Sign up process completed');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -92,18 +75,6 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
-  /// Add debug log entry
-  void _addDebugLog(String message) {
-    final timestamp = DateTime.now().toIso8601String().substring(11, 19);
-    final logEntry = '[$timestamp] $message';
-    if (mounted) {
-      setState(() {
-        _debugLogs.add(logEntry);
-        _debugInfo = _debugLogs.join('\n');
-      });
-    }
-
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -590,82 +561,6 @@ class _SignUpPageState extends State<SignUpPage> {
                           ),
                           SizedBox(height: screenHeight * 0.025),
 
-                          // Debug Section (minimized)
-                          if (_showDebugInfo) ...[
-                            Container(
-                              padding: EdgeInsets.all(screenWidth * 0.04),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(15),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.2),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Debug Information',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: screenHeight * 0.018,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        onPressed: () {
-                                          setState(() {
-                                            _showDebugInfo = false;
-                                          });
-                                        },
-                                        icon: const Icon(
-                                          Icons.close,
-                                          color: Colors.white70,
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  SizedBox(height: screenHeight * 0.01),
-                                  SizedBox(
-                                    height: screenHeight * 0.15,
-                                    child: SingleChildScrollView(
-                                      child: Text(
-                                        _debugInfo.isEmpty ? 'No debug information yet' : _debugInfo,
-                                        style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: screenHeight * 0.014,
-                                          fontFamily: 'monospace',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(height: screenHeight * 0.015),
-                          ] else ...[
-                            // Debug toggle button (minimized)
-                            Center(
-                              child: TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _showDebugInfo = true;
-                                  });
-                                },
-                                icon: const Icon(Icons.bug_report, size: 14),
-                                label: const Text('Debug'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: Colors.white.withOpacity(0.6),
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: screenHeight * 0.015),
-                          ],
 
                           // Sign In Link with better styling
                           Container(
@@ -692,7 +587,7 @@ class _SignUpPageState extends State<SignUpPage> {
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () => Navigator.pop(context),
+                                  onTap: () => context.go(RouteConstants.signIn),
                                   child: Text(
                                     'Sign In',
                                     style: TextStyle(

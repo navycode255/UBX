@@ -24,6 +24,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
   int _pinRemainingAttempts = 3;
   int _pinLockoutTimeRemaining = 0;
   bool _isLoading = false;
+  bool _showPinInfo = false;
   
   final AuthService _authService = AuthService.instance;
   final BiometricService _biometricService = BiometricService.instance;
@@ -94,28 +95,38 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
 
   /// Toggle biometric authentication
   Future<void> _toggleBiometric() async {
+    // debugPrint('🔐 BiometricSettings: ===== TOGGLING BIOMETRIC AUTHENTICATION =====');
+    // debugPrint('🔐 BiometricSettings: Current biometric enabled state: $_isBiometricEnabled');
+    
     try {
       if (_isBiometricEnabled) {
+        // debugPrint('🔐 BiometricSettings: Disabling biometric authentication...');
         // Disable biometric login
         final success = await _biometricService.disableBiometricLogin();
         if (mounted) {
           if (success) {
-            setState(() {
-              _isBiometricEnabled = false;
-            });
+            // debugPrint('🔐 BiometricSettings: Biometric disabled successfully, refreshing status...');
+            // Refresh both biometric and PIN status after disabling
+            await _loadBiometricStatus();
             context.showSuccessNotification('Biometric authentication disabled');
+            // debugPrint('🔐 BiometricSettings: Status refresh completed after biometric disable');
           } else {
+            // debugPrint('❌ BiometricSettings: Failed to disable biometric authentication');
             context.showErrorNotification('Failed to disable biometric authentication');
           }
         }
       } else {
+        // debugPrint('🔐 BiometricSettings: Enabling biometric authentication...');
         // Enable biometric login - check if PIN is set up first
         final isPinEnabled = await _pinService.isPinEnabled();
+        // debugPrint('🔐 BiometricSettings: PIN enabled check: $isPinEnabled');
         
         if (!isPinEnabled) {
+          // debugPrint('🔐 BiometricSettings: PIN not enabled, prompting user to setup PIN...');
           // Prompt user to setup PIN first
           final shouldSetupPin = await _showPinSetupPrompt();
           if (!shouldSetupPin) {
+            // debugPrint('🔐 BiometricSettings: User cancelled PIN setup');
             return; // User cancelled
           }
           
@@ -126,11 +137,14 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
             ),
           );
           
+          // debugPrint('🔐 BiometricSettings: PIN setup dialog returned: $result');
           if (result != true) {
+            // debugPrint('🔐 BiometricSettings: User did not complete PIN setup');
             return; // User didn't complete PIN setup
           }
         }
         
+        // debugPrint('🔐 BiometricSettings: Proceeding with biometric enable...');
         // Now enable biometric authentication
         final userData = await _authService.getCurrentUser();
         final email = userData['email'];
@@ -142,6 +156,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
           final storedToken = await secureStorage.getAuthToken();
           final token = storedToken ?? 'token_${DateTime.now().millisecondsSinceEpoch}';
           
+          // debugPrint('🔐 BiometricSettings: Calling enableBiometricLogin...');
           final success = await _biometricService.enableBiometricLogin(
             email: email,
             token: token,
@@ -151,25 +166,30 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
           
           if (mounted) {
             if (success) {
-              setState(() {
-                _isBiometricEnabled = true;
-              });
-              context.showSuccessNotification('Biometric authentication enabled with PIN fallback');
+              // debugPrint('🔐 BiometricSettings: Biometric enabled successfully, refreshing status...');
+              // Refresh both biometric and PIN status after enabling
+              await _loadBiometricStatus();
+              context.showSuccessNotification('Biometric authentication enabled');
+              // debugPrint('🔐 BiometricSettings: Status refresh completed after biometric enable');
             } else {
+              // debugPrint('❌ BiometricSettings: Failed to enable biometric authentication');
               context.showErrorNotification('Failed to enable biometric authentication');
             }
           }
         } else {
+          // debugPrint('❌ BiometricSettings: User data incomplete');
           if (mounted) {
             context.showErrorNotification('User data incomplete. Please sign in again.');
           }
         }
       }
     } catch (e) {
+      // debugPrint('❌ BiometricSettings: Error toggling biometric: $e');
       if (mounted) {
         context.showErrorNotification('Failed to toggle biometric: ${e.toString()}');
       }
     }
+    // debugPrint('🔐 BiometricSettings: ===== BIOMETRIC TOGGLE COMPLETED =====');
   }
 
   /// Show PIN setup prompt dialog
@@ -205,15 +225,21 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
 
   /// Setup PIN fallback
   Future<void> _setupPin() async {
+    // debugPrint('🔐 BiometricSettings: Starting PIN setup process...');
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => const PinSetupPage(isSetup: true),
       ),
     );
     
+    // debugPrint('🔐 BiometricSettings: PIN setup dialog returned: $result');
     if (result == true) {
+      // debugPrint('🔐 BiometricSettings: PIN setup successful, refreshing status...');
       // Refresh status after successful PIN setup
-      _loadBiometricStatus();
+      await _loadBiometricStatus();
+      // debugPrint('🔐 BiometricSettings: Status refresh completed after PIN setup');
+    } else {
+      // debugPrint('🔐 BiometricSettings: PIN setup was cancelled or failed');
     }
   }
 
@@ -224,7 +250,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
       context: context,
       title: 'Verify Current PIN',
       subtitle: 'Enter your current PIN to change it',
-      onSuccess: () async {
+      onSuccess: (String verifiedPin) async {
         // After successful verification, show PIN change dialog
         final result = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
@@ -245,6 +271,17 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
 
   /// Disable PIN
   Future<void> _disablePin() async {
+    // Check if biometrics are enabled
+    if (_isBiometricEnabled) {
+      // Show notification that PIN cannot be disabled when biometrics are enabled
+      if (mounted) {
+        context.showErrorNotification(
+          'Cannot disable PIN fallback while biometric authentication is enabled. Please disable biometric authentication first.',
+        );
+      }
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -278,25 +315,42 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
 
   /// Confirm disable PIN with current PIN verification
   Future<void> _confirmDisablePin() async {
+    // debugPrint('🔐 BiometricSettings: Starting PIN disable process');
     showPinVerificationDialog(
       context: context,
       title: 'Verify Current PIN',
       subtitle: 'Enter your current PIN to disable PIN authentication',
-      onSuccess: () async {
+      onSuccess: (String verifiedPin) async {
         try {
-          // For now, we'll show a placeholder message
-          // In a real implementation, we'd get the PIN from the dialog
-          if (mounted) {
-            context.showSuccessNotification('PIN disabled successfully');
-            _loadBiometricStatus();
+          // debugPrint('🔐 BiometricSettings: PIN verification successful, PIN: ${verifiedPin.length} digits');
+          // debugPrint('🔐 BiometricSettings: Calling _pinService.disablePin()');
+          
+          // Actually disable PIN authentication with the verified PIN
+          final result = await _pinService.disablePin(verifiedPin);
+          
+          // debugPrint('🔐 BiometricSettings: PIN disable result - Success: ${result.isSuccess}, Message: ${result.message}');
+          
+          if (result.isSuccess) {
+            if (mounted) {
+              // debugPrint('🔐 BiometricSettings: PIN disabled successfully, showing success notification');
+              context.showSuccessNotification('PIN disabled successfully');
+              _loadBiometricStatus();
+            }
+          } else {
+            if (mounted) {
+              // debugPrint('🔐 BiometricSettings: PIN disable failed, showing error notification');
+              context.showErrorNotification('Failed to disable PIN: ${result.message}');
+            }
           }
         } catch (e) {
+          // debugPrint('🔐 BiometricSettings: Exception during PIN disable: $e');
           if (mounted) {
             context.showErrorNotification('Failed to disable PIN: $e');
           }
         }
       },
       onCancel: () {
+        // debugPrint('🔐 BiometricSettings: User cancelled PIN verification');
         // User cancelled
       },
     );
@@ -588,6 +642,21 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                                 color: Colors.grey[800],
                               ),
                             ),
+                            const Spacer(),
+                            if (_isBiometricEnabled && _isPinEnabled)
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _showPinInfo = !_showPinInfo;
+                                  });
+                                },
+                                icon: Icon(
+                                  _showPinInfo ? Icons.info : Icons.info_outline,
+                                  color: Colors.blue[700],
+                                  size: 20,
+                                ),
+                                tooltip: _showPinInfo ? 'Hide info' : 'Show info',
+                              ),
                           ],
                         ),
                         SizedBox(height: screenHeight * 0.02),
@@ -683,11 +752,11 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                               SizedBox(width: screenWidth * 0.03),
                               Expanded(
                                 child: ElevatedButton.icon(
-                                  onPressed: _isLoading ? null : _disablePin,
+                                  onPressed: (_isLoading || _isBiometricEnabled) ? null : _disablePin,
                                   icon: const Icon(Icons.remove_circle_outline, size: 18),
                                   label: const Text('Disable PIN'),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
+                                    backgroundColor: _isBiometricEnabled ? Colors.grey : Colors.red,
                                     foregroundColor: Colors.white,
                                     padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),
                                   ),
@@ -708,6 +777,38 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                                 foregroundColor: Colors.white,
                                 padding: EdgeInsets.symmetric(vertical: screenHeight * 0.015),
                               ),
+                            ),
+                          ),
+                        ],
+                        
+                        // Show explanation when biometrics are enabled and PIN cannot be disabled (only when info is toggled)
+                        if (_isBiometricEnabled && _isPinEnabled && _showPinInfo) ...[
+                          SizedBox(height: screenHeight * 0.02),
+                          Container(
+                            padding: EdgeInsets.all(screenWidth * 0.03),
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.blue[200]!),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  color: Colors.blue[700],
+                                  size: 20,
+                                ),
+                                SizedBox(width: screenWidth * 0.02),
+                                Expanded(
+                                  child: Text(
+                                    'PIN fallback cannot be disabled while biometric authentication is enabled. Disable biometric authentication first to manage PIN settings.',
+                                    style: TextStyle(
+                                      fontSize: screenWidth * 0.035,
+                                      color: Colors.blue[700],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],

@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/biometric_service.dart';
 import '../../../core/services/pin_service.dart';
+import '../../../core/services/pin_auth_service.dart';
+import '../../../core/services/secure_storage_service.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../router/navigation_helper.dart';
 import '../../../router/route_constants.dart';
@@ -30,7 +32,6 @@ class _SignInPageState extends State<SignInPage> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _lastErrorMessage;
-  bool _showRetryButton = false;
   
   // Biometric variables
   bool _isBiometricAvailable = false;
@@ -39,15 +40,17 @@ class _SignInPageState extends State<SignInPage> {
   bool _biometricError = false;
   bool _biometricSuccess = false;
   String _biometricStatusText = '';
+  bool _pinFallbackWasShown = false;
+  
+  // PIN variables
+  bool _isPinEnabled = false;
   
   final AuthService _authService = AuthService.instance;
   final BiometricService _biometricService = BiometricService.instance;
   final PinService _pinService = PinService.instance;
+  final PinAuthService _pinAuthService = PinAuthService.instance;
+  final SecureStorageService _secureStorage = SecureStorageService.instance;
   
-  // Debug variables
-  bool _showDebugInfo = false;
-  String _debugInfo = '';
-  List<String> _debugLogs = [];
 
   @override
   void initState() {
@@ -62,30 +65,25 @@ class _SignInPageState extends State<SignInPage> {
     _loadBiometricStatus();
   }
 
-  /// Load biometric status for UI display
+  /// Load biometric and PIN status for UI display
   Future<void> _loadBiometricStatus() async {
     try {
       final isAvailable = await _biometricService.isBiometricAvailable();
       final isEnabled = await _biometricService.isBiometricLoginEnabled();
       final biometricType = await _biometricService.getPrimaryBiometricType();
+      final isPinEnabled = await _pinService.isPinEnabled();
 
       if (mounted) {
         setState(() {
           _isBiometricAvailable = isAvailable;
           _isBiometricEnabled = isEnabled;
           _biometricType = biometricType;
+          _isPinEnabled = isPinEnabled;
         });
       }
 
-      _addDebugLog('📊 Biometric available: $isAvailable');
-      _addDebugLog('📊 Biometric enabled: $isEnabled');
-      _addDebugLog('📊 Biometric type: $biometricType');
-      
-      if (isAvailable && !isEnabled) {
-        _addDebugLog('💡 Biometric available but not enabled - go to settings to enable');
-      }
     } catch (e) {
-      _addDebugLog('💥 Error loading biometric status: $e');
+      // Handle error silently
     }
   }
 
@@ -96,31 +94,19 @@ class _SignInPageState extends State<SignInPage> {
     super.dispose();
   }
 
-  /// Add debug log entry
-  void _addDebugLog(String message) {
-    final timestamp = DateTime.now().toString().substring(11, 19);
-    final logEntry = '[$timestamp] $message';
-    if (mounted) {
-      setState(() {
-        _debugLogs.add(logEntry);
-        _debugInfo = _debugLogs.join('\n');
-      });
-    }
-
-  }
 
   /// Sign in with email and password
   Future<void> _signIn() async {
+    if (_isLoading) {
+      return;
+    }
+    
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
-      _debugLogs.clear();
       _lastErrorMessage = null;
-      _showRetryButton = false;
     });
-
-    _addDebugLog('🔐 Starting email/password sign in...');
 
     try {
       final result = await _authService.signIn(
@@ -128,21 +114,15 @@ class _SignInPageState extends State<SignInPage> {
         password: _passwordController.text,
       );
 
-      _addDebugLog('🔐 Sign in result: ${result.isSuccess}');
-      _addDebugLog('📝 Message: ${result.message}');
-
       if (mounted) {
         if (result.isSuccess) {
-          _addDebugLog('🎉 Sign in successful! Navigating to home...');
           context.showSuccessNotification('Sign in successful!');
-          NavigationHelper.goToHome(context);
+          NavigationHelper.goAfterLogin(context);
         } else {
-          _addDebugLog('❌ Sign in failed: ${result.message}');
           _handleSignInError(result.message);
         }
       }
     } catch (e) {
-      _addDebugLog('💥 Sign in error: ${e.toString()}');
       if (mounted) {
         _handleSignInError('Sign in failed: ${e.toString()}');
       }
@@ -153,33 +133,34 @@ class _SignInPageState extends State<SignInPage> {
         });
       }
     }
-  }
-
-  /// Handle sign in error and show retry option
-  void _handleSignInError(String message) {
-    setState(() {
-      _lastErrorMessage = message;
-      _showRetryButton = true;
-    });
     
-    // Show error notification with longer duration
-    context.showErrorNotification(message, duration: const Duration(seconds: 6));
+    // Safety timeout - ensure loading state is reset after 10 seconds
+    Future.delayed(const Duration(seconds: 10), () {
+      if (mounted && _isLoading) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    });
   }
 
-  /// Retry sign in
-  void _retrySignIn() {
-    setState(() {
-      _showRetryButton = false;
-      _lastErrorMessage = null;
-    });
-    _signIn();
+  /// Handle sign in error
+  void _handleSignInError(String message) {
+    if (mounted) {
+      setState(() {
+        _lastErrorMessage = message;
+      });
+      
+      // Show error notification
+      context.showErrorNotification(message, duration: const Duration(seconds: 4));
+    }
   }
+
 
   /// Clear error state when user starts typing
   void _clearErrorState() {
-    if (_showRetryButton) {
+    if (_lastErrorMessage != null) {
       setState(() {
-        _showRetryButton = false;
         _lastErrorMessage = null;
       });
     }
@@ -188,7 +169,6 @@ class _SignInPageState extends State<SignInPage> {
   /// Sign in using biometric authentication with PIN fallback
   Future<void> _signInWithBiometric() async {
     if (_isLoading) {
-      _addDebugLog('⚠️ Authentication already in progress, skipping...');
       return;
     }
 
@@ -197,45 +177,45 @@ class _SignInPageState extends State<SignInPage> {
       _biometricError = false;
       _biometricSuccess = false;
       _biometricStatusText = 'Authenticating...';
-      _debugLogs.clear();
       _lastErrorMessage = null;
-      _showRetryButton = false;
     });
-
-    _addDebugLog('🔐 Starting biometric authentication...');
 
     try {
       // Check if biometric is enabled first
       final isEnabled = await _biometricService.isBiometricLoginEnabled();
-      _addDebugLog('📊 Biometric enabled: $isEnabled');
       
       if (!isEnabled) {
-        _addDebugLog('❌ Biometric not enabled - please enable in settings first');
         _showBiometricError();
         return;
       }
 
       // Try biometric authentication with fallback (single attempt)
-      final result = await _biometricService.authenticateWithFallback();
+      // If PIN fallback was previously shown, reset attempts and try fresh
+      final result = _pinFallbackWasShown 
+          ? await _biometricService.authenticateWithReset()
+          : await _biometricService.authenticateWithFallback();
       
-      _addDebugLog('🔐 Biometric result: ${result?.isSuccess}');
-      _addDebugLog('📝 Message: ${result?.message}');
-
       if (mounted) {
         if (result?.isSuccess == true) {
-          _addDebugLog('🎉 Biometric sign-in successful! Navigating to home...');
+          _pinFallbackWasShown = false; // Reset flag on success
           _showBiometricSuccess();
-          // Navigate after showing success feedback
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) {
-              NavigationHelper.goToHome(context);
-            }
-          });
-        } else if (result?.requiresPinFallback == true) {
-          _addDebugLog('🔑 Biometric failed 3 times, PIN fallback required');
+          
+          // Store user credentials in regular authentication storage for PIN fallback
+          await _secureStorage.storeEmail(result!.email!);
+          await _secureStorage.storeUserId(result.userId!);
+          await _secureStorage.storeName(result.name!);
+          await _secureStorage.storeAuthToken(result.token!);
+          
+          // Set user as logged in after successful biometric authentication
+          await _secureStorage.setLoggedIn(true);
+          await _secureStorage.setAppLocked(false);
+          
+          // Navigate immediately without delay
+          NavigationHelper.goAfterLogin(context);
+        } else if (result?.isPinFallbackRequired == true) {
+          _pinFallbackWasShown = true; // Mark that PIN fallback was shown
           _showPinFallbackDialog();
         } else {
-          _addDebugLog('❌ Biometric sign-in failed: ${result?.message}');
           _showBiometricError();
           // Show retry option after a brief delay
           Future.delayed(const Duration(milliseconds: 1000), () {
@@ -248,7 +228,6 @@ class _SignInPageState extends State<SignInPage> {
         }
       }
     } catch (e) {
-      _addDebugLog('💥 Biometric authentication error: ${e.toString()}');
       if (mounted) {
         _showBiometricError();
         // Show retry option after a brief delay
@@ -272,51 +251,31 @@ class _SignInPageState extends State<SignInPage> {
   /// Sign in using PIN authentication
   Future<void> _signInWithPin() async {
     if (_isLoading) {
-      _addDebugLog('⚠️ Authentication already in progress, skipping...');
       return;
     }
-    
-    // Quick check - don't want to spam the logs
 
     setState(() {
       _isLoading = true;
       _biometricError = false;
       _biometricSuccess = false;
       _biometricStatusText = 'Authenticating with PIN...';
-      _debugLogs.clear();
       _lastErrorMessage = null;
-      _showRetryButton = false;
     });
-
-    _addDebugLog('🔑 Starting PIN authentication...');
 
     try {
       // Check if PIN is enabled
       final isPinEnabled = await _pinService.isPinEnabled();
-      _addDebugLog('📊 PIN enabled: $isPinEnabled');
       
       // Quick validation
       if (!isPinEnabled) {
-        _addDebugLog('❌ PIN is not enabled');
-        _showBiometricError();
-        return;
-      }
-      
-      // Old approach - keeping for reference
-      // final pinStatus = await _pinService.getPinStatus();
-      // if (pinStatus == null) return;
-      
-      if (!isPinEnabled) {
-        _addDebugLog('❌ PIN not set up - please set up PIN first');
         _showBiometricError();
         context.showErrorNotification('PIN not set up. Please set up a PIN first.');
         return;
       }
 
       // Check if PIN is locked
-      final pinLocked = await _pinService.isPinLocked(); // inconsistent naming
+      final pinLocked = await _pinService.isPinLocked();
       if (pinLocked) {
-        _addDebugLog('❌ PIN is locked due to too many failed attempts');
         _showBiometricError();
         context.showErrorNotification('PIN is locked due to too many failed attempts. Please try again later.');
         return;
@@ -326,7 +285,6 @@ class _SignInPageState extends State<SignInPage> {
       _showPinFallbackDialog();
 
     } catch (e) {
-      _addDebugLog('💥 PIN authentication error: ${e.toString()}');
       if (mounted) {
         _showBiometricError();
         context.showErrorNotification('PIN authentication failed: ${e.toString()}');
@@ -390,30 +348,50 @@ class _SignInPageState extends State<SignInPage> {
       barrierDismissible: true, // Allow dismissing by tapping outside
       builder: (context) => PinFallbackDialog(
         onPinVerified: (pin) async {
-          // Try PIN authentication
-          final result = await _biometricService.authenticateWithPin(pin);
-
-          if (mounted) {
-            if (result?.isSuccess == true) {
-              _addDebugLog('🎉 PIN authentication successful! Navigating to home...');
-              _showBiometricSuccess();
-              Navigator.of(context).pop(); // Close dialog
-              // Navigate after showing success feedback
-              Future.delayed(const Duration(milliseconds: 500), () {
-                if (mounted) {
-                  NavigationHelper.goToHome(context);
-                }
+          try {
+            // Try PIN authentication using dedicated PIN auth service
+            final result = await _pinAuthService.authenticateWithPin(pin);
+            
+            if (mounted) {
+              if (result.isSuccess) {
+                // Store user credentials in regular authentication storage
+                await _secureStorage.storeEmail(result.email!);
+                await _secureStorage.storeUserId(result.userId!);
+                await _secureStorage.storeName(result.name!);
+                await _secureStorage.storeAuthToken(result.token!);
+                
+                // Set user as logged in after successful PIN authentication
+                await _secureStorage.setLoggedIn(true);
+                await _secureStorage.setAppLocked(false);
+                
+                // Add a small delay to ensure state is properly set
+                await Future.delayed(const Duration(milliseconds: 100));
+                
+                // Navigate BEFORE closing the dialog to avoid context issues
+                NavigationHelper.goAfterLogin(context);
+                
+                // Show success notification and close dialog AFTER navigation
+                _showBiometricSuccess();
+                Navigator.of(context).pop(); // Close dialog
+              } else {
+                // Show error in dialog
+                setState(() {
+                  _lastErrorMessage = result.message ?? 'PIN authentication failed';
+                });
+              }
+            }
+          } catch (e) {
+            if (mounted) {
+              setState(() {
+                _lastErrorMessage = 'PIN authentication error: $e';
               });
-            } else {
-              _addDebugLog('❌ PIN authentication failed: ${result?.message}');
-              // Show error in dialog
             }
           }
         },
         onCancel: () async {
-          _addDebugLog('🔙 PIN fallback cancelled, resetting biometric attempts');
           // Reset biometric attempt count when PIN fallback is cancelled
           await _biometricService.resetBiometricAttempts();
+          _pinFallbackWasShown = false; // Reset flag when cancelled
           setState(() {
             _biometricStatusText = 'Tap to authenticate';
           });
@@ -423,67 +401,6 @@ class _SignInPageState extends State<SignInPage> {
     );
   }
 
-  /// Test biometric availability
-  Future<void> _testBiometricAvailability() async {
-    _addDebugLog('🧪 Testing biometric availability...');
-    
-    try {
-      final isAvailable = await _biometricService.isBiometricAvailable();
-      _addDebugLog('📊 Biometric available: $isAvailable');
-      
-      if (isAvailable) {
-        final availableTypes = await _biometricService.getAvailableBiometricTypes();
-        _addDebugLog('📊 Available biometric types: $availableTypes');
-        
-        final isEnabled = await _biometricService.isBiometricLoginEnabled();
-        _addDebugLog('📊 Biometric enabled: $isEnabled');
-        
-        if (isEnabled) {
-          _addDebugLog('✅ Biometric is ready to use!');
-        } else {
-          _addDebugLog('⚠️ Biometric available but not enabled');
-        }
-      } else {
-        _addDebugLog('❌ Biometric not available on this device');
-      }
-    } catch (e) {
-      _addDebugLog('💥 Error testing biometric availability: $e');
-    }
-  }
-
-  /// Test direct biometric authentication
-  Future<void> _testDirectBiometric() async {
-    _addDebugLog('🧪 Testing direct biometric authentication...');
-    
-    try {
-      // First check if biometric is enabled
-      final isEnabled = await _biometricService.isBiometricLoginEnabled();
-      _addDebugLog('📊 Biometric enabled: $isEnabled');
-      
-      if (!isEnabled) {
-        _addDebugLog('❌ Biometric not enabled - please sign in with email/password first');
-        return;
-      }
-      
-      final result = await _biometricService.authenticateWithBiometric();
-      
-      if (result != null) {
-        _addDebugLog('✅ Direct biometric authentication successful!');
-        _addDebugLog('📧 Email: ${result.email}');
-        _addDebugLog('🆔 User ID: ${result.userId}');
-        _addDebugLog('👤 Name: ${result.name}');
-        
-        // Show success feedback
-        _showBiometricSuccess();
-      } else {
-        _addDebugLog('❌ Direct biometric authentication failed');
-        _showBiometricError();
-      }
-    } catch (e) {
-      _addDebugLog('💥 Error in direct biometric test: $e');
-      _showBiometricError();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -811,7 +728,7 @@ class _SignInPageState extends State<SignInPage> {
                                         ),
                                       )
                                     : Text(
-                                        'Sign In',
+                                        _lastErrorMessage != null ? 'Try Again' : 'Sign In',
                                         style: TextStyle(
                                           fontSize: screenHeight * 0.022,
                                           fontWeight: FontWeight.bold,
@@ -824,82 +741,6 @@ class _SignInPageState extends State<SignInPage> {
                           ],
                         ),
                       ),
-                      
-                      // Error message and retry button
-                      if (_showRetryButton && _lastErrorMessage != null) ...[
-                        SizedBox(height: screenHeight * 0.02),
-                        Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.all(screenWidth * 0.04),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Colors.red.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.error_outline,
-                                    color: Colors.red,
-                                    size: screenWidth * 0.05,
-                                  ),
-                                  SizedBox(width: screenWidth * 0.03),
-                                  Expanded(
-                                    child: Text(
-                                      _lastErrorMessage!,
-                                      style: TextStyle(
-                                        color: Colors.red[700],
-                                        fontSize: screenHeight * 0.016,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: screenHeight * 0.015),
-                              SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _retrySignIn,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: screenHeight * 0.015,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  child: _isLoading
-                                      ? SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                          ),
-                                        )
-                                      : Text(
-                                          'Try Again',
-                                          style: TextStyle(
-                                            fontSize: screenHeight * 0.018,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                       
                       SizedBox(height: screenHeight * 0.025),
 
@@ -1025,187 +866,77 @@ class _SignInPageState extends State<SignInPage> {
                       if (!_isBiometricAvailable || !_isBiometricEnabled) ...[
                         SizedBox(height: screenHeight * 0.025),
                         
-                        // PIN Authentication Button
-                        Center(
-                          child: GestureDetector(
-                            onTap: _isLoading ? null : _signInWithPin,
-                            child: Container(
-                              width: screenWidth * 0.2,
-                              height: screenWidth * 0.2,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Colors.white.withOpacity(0.2),
-                                    Colors.white.withOpacity(0.1),
+                        // PIN Authentication Button (only show if PIN is enabled)
+                        if (_isPinEnabled) ...[
+                          Center(
+                            child: GestureDetector(
+                              onTap: _isLoading ? null : _signInWithPin,
+                              child: Container(
+                                width: screenWidth * 0.2,
+                                height: screenWidth * 0.2,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.white.withOpacity(0.2),
+                                      Colors.white.withOpacity(0.1),
+                                    ],
+                                  ),
+                                  border: Border.all(
+                                    color: _isLoading 
+                                        ? Colors.grey.withOpacity(0.3)
+                                        : Colors.white.withOpacity(0.4),
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
+                                    ),
                                   ],
                                 ),
-                                border: Border.all(
-                                  color: _isLoading 
-                                      ? Colors.grey.withOpacity(0.3)
-                                      : Colors.white.withOpacity(0.4),
-                                  width: 2,
+                                child: Icon(
+                                  Icons.pin,
+                                  size: screenWidth * 0.1,
+                                  color: Colors.white,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.pin,
-                                size: screenWidth * 0.1,
-                                color: Colors.white,
                               ),
                             ),
                           ),
-                        ),
-                        
-                        SizedBox(height: screenHeight * 0.015),
-                        
-                        // PIN Status Text
-                        Center(
-                          child: Text(
-                            _isBiometricAvailable 
-                                ? 'Use PIN to sign in'
-                                : 'Biometric not available - Use PIN',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: screenHeight * 0.018,
-                              fontWeight: FontWeight.w500,
+                          
+                          SizedBox(height: screenHeight * 0.015),
+                          
+                          // PIN Status Text
+                          Center(
+                            child: Text(
+                              _isBiometricAvailable 
+                                  ? 'Use PIN to sign in'
+                                  : 'Biometric not available - Use PIN',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: screenHeight * 0.018,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                        
-                        SizedBox(height: screenHeight * 0.008),
-                        
-                        Center(
-                          child: Text(
-                            'Tap to authenticate with PIN',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: screenHeight * 0.014,
+                          
+                          SizedBox(height: screenHeight * 0.008),
+                          
+                          Center(
+                            child: Text(
+                              'Tap to authenticate with PIN',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: screenHeight * 0.014,
+                              ),
                             ),
                           ),
-                        ),
-                        
-                        SizedBox(height: screenHeight * 0.02),
+                          
+                          SizedBox(height: screenHeight * 0.02),
+                        ],
                       ],
 
-                      // Debug Section (minimized)
-                      if (_showDebugInfo) ...[
-                        Container(
-                          padding: EdgeInsets.all(screenWidth * 0.04),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(15),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 1,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Debug Information',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: screenHeight * 0.018,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _showDebugInfo = false;
-                                      });
-                                    },
-                                    icon: const Icon(
-                                      Icons.close,
-                                      color: Colors.white70,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              SizedBox(height: screenHeight * 0.01),
-                              SizedBox(
-                                height: screenHeight * 0.15,
-                                child: SingleChildScrollView(
-                                  child: Text(
-                                    _debugInfo.isEmpty ? 'No debug information yet' : _debugInfo,
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: screenHeight * 0.014,
-                                      fontFamily: 'monospace',
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: screenHeight * 0.01),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: _testBiometricAvailability,
-                                      icon: const Icon(Icons.security, size: 16),
-                                      label: const Text('Test Bio'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.purple.withOpacity(0.8),
-                                        foregroundColor: Colors.white,
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: screenWidth * 0.03,
-                                          vertical: screenHeight * 0.01,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(width: screenWidth * 0.02),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: _testDirectBiometric,
-                                      icon: const Icon(Icons.fingerprint, size: 16),
-                                      label: const Text('Test Auth'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.orange.withOpacity(0.8),
-                                        foregroundColor: Colors.white,
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: screenWidth * 0.03,
-                                          vertical: screenHeight * 0.01,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(height: screenHeight * 0.015),
-                      ] else ...[
-                        // Debug toggle button (minimized)
-                        Center(
-                          child: TextButton.icon(
-                            onPressed: () {
-                              setState(() {
-                                _showDebugInfo = true;
-                              });
-                            },
-                            icon: const Icon(Icons.bug_report, size: 14),
-                            label: const Text('Debug'),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white.withOpacity(0.6),
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: screenHeight * 0.015),
-                      ],
 
                       // Sign Up Link with better styling
                       Container(
@@ -1266,7 +997,7 @@ class _SignInPageState extends State<SignInPage> {
 
 /// PIN Fallback Dialog for biometric authentication
 class PinFallbackDialog extends StatefulWidget {
-  final Function(String) onPinVerified;
+  final Future<void> Function(String) onPinVerified;
   final VoidCallback? onCancel;
 
   const PinFallbackDialog({
@@ -1303,20 +1034,20 @@ class _PinFallbackDialogState extends State<PinFallbackDialog> {
 
   /// Verify PIN
   Future<void> _verifyPin() async {
-    if (_pin.length < 4) {
+    if (_pin.length != 4) {
       setState(() {
-        _errorMessage = 'Please enter a valid PIN';
+        _errorMessage = 'PIN must be exactly 4 digits';
       });
       return;
     }
-
+    
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
-
+    
     try {
-      widget.onPinVerified(_pin);
+      await widget.onPinVerified(_pin);
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to verify PIN: $e';
@@ -1379,19 +1110,11 @@ class _PinFallbackDialogState extends State<PinFallbackDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Biometric Failed 3 Times - Use PIN',
+                          'Use PIN',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Biometric authentication failed. Please enter your PIN.',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 14,
                           ),
                         ),
                       ],
@@ -1417,9 +1140,10 @@ class _PinFallbackDialogState extends State<PinFallbackDialog> {
                   focusNode: _pinFocusNode,
                   obscureText: _obscurePin,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
                   inputFormatters: [
                     FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(8),
+                    LengthLimitingTextInputFormatter(4),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -1454,43 +1178,17 @@ class _PinFallbackDialogState extends State<PinFallbackDialog> {
                         color: Colors.white.withOpacity(0.7),
                       ),
                     ),
+                    counterText: '', // Hide the character counter
+                    counter: const SizedBox.shrink(), // Completely remove counter
                   ),
                 ),
               ),
               
-              // Error message
+              // Error message (hidden visually)
               if (_errorMessage.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.red.withOpacity(0.5),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        color: Colors.red[300],
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _errorMessage,
-                          style: TextStyle(
-                            color: Colors.red[300],
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Error message is now hidden but still logged for debugging
+                const SizedBox.shrink(),
               ],
               
               const SizedBox(height: 24),

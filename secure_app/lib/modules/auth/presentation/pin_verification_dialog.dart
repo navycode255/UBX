@@ -6,7 +6,7 @@ import '../../../core/widgets/custom_notification.dart';
 class PinVerificationDialog extends StatefulWidget {
   final String title;
   final String subtitle;
-  final VoidCallback? onSuccess;
+  final Function(String)? onSuccess;
   final VoidCallback? onCancel;
 
   const PinVerificationDialog({
@@ -47,33 +47,46 @@ class _PinVerificationDialogState extends State<PinVerificationDialog> {
 
   /// Verify PIN
   Future<void> _verifyPin() async {
+    // debugPrint('🔐 PIN Dialog: ===== STARTING PIN VERIFICATION =====');
+    // debugPrint('🔐 PIN Dialog: PIN received: "$_pin" (length: ${_pin.length})');
+    
     if (_pin.length < 4) {
+      // debugPrint('❌ PIN Dialog: PIN too short, length: ${_pin.length}');
       setState(() {
         _errorMessage = 'Please enter a valid PIN';
       });
       return;
     }
 
+    // debugPrint('✅ PIN Dialog: PIN length validation passed');
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
 
     try {
+      // debugPrint('🔐 PIN Dialog: Calling _pinService.verifyPin("$_pin")');
       final result = await _pinService.verifyPin(_pin);
+      // debugPrint('🔐 PIN Dialog: PIN verification completed');
+      // debugPrint('🔐 PIN Dialog: PIN verification success: ${result.isSuccess}');
+      // debugPrint('🔐 PIN Dialog: PIN verification message: ${result.message}');
       
       if (mounted) {
         if (result.isSuccess) {
+          // debugPrint('✅ PIN Dialog: PIN verification successful, calling onSuccess callback');
           context.showSuccessNotification('PIN verified successfully');
           Navigator.of(context).pop();
-          widget.onSuccess?.call();
+          widget.onSuccess?.call(_pin);
+          // debugPrint('✅ PIN Dialog: onSuccess callback completed');
         } else {
+          // debugPrint('❌ PIN Dialog: PIN verification failed, showing error message');
           setState(() {
             _errorMessage = result.message;
           });
         }
       }
     } catch (e) {
+      // debugPrint('❌ PIN Dialog: PIN verification error: $e');
       if (mounted) {
         setState(() {
           _errorMessage = 'Failed to verify PIN: $e';
@@ -85,6 +98,7 @@ class _PinVerificationDialogState extends State<PinVerificationDialog> {
           _isLoading = false;
         });
       }
+      // debugPrint('🔐 PIN Dialog: ===== PIN VERIFICATION COMPLETED =====');
     }
   }
 
@@ -142,14 +156,6 @@ class _PinVerificationDialogState extends State<PinVerificationDialog> {
                             color: Colors.white,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.subtitle,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 14,
                           ),
                         ),
                       ],
@@ -312,7 +318,7 @@ Future<void> showPinVerificationDialog({
   required BuildContext context,
   required String title,
   required String subtitle,
-  VoidCallback? onSuccess,
+  Function(String)? onSuccess,
   VoidCallback? onCancel,
 }) {
   return showDialog(

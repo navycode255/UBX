@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../core/services/pin_service.dart';
 import '../../../core/widgets/widgets.dart';
 
@@ -81,12 +80,16 @@ class _PinSetupPageState extends State<PinSetupPage> {
       focusNode: focusNode,
       obscureText: obscureText,
       onToggleVisibility: onToggleObscure,
+      onChanged: onChanged,
       onSubmitted: () => onChanged(controller.text),
     );
   }
 
   /// Setup PIN
   Future<void> _setupPin() async {
+    // debugPrint('🔐 PIN Setup: _pin length: ${_pin.length}, _pin value: "$_pin"');
+    // debugPrint('🔐 PIN Setup: _confirmPin length: ${_confirmPin.length}, _confirmPin value: "$_confirmPin"');
+    
     if (_pin.length < 4) {
       setState(() {
         _errorMessage = 'PIN must be at least 4 digits';
@@ -244,23 +247,13 @@ class _PinSetupPageState extends State<PinSetupPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Title and description
+                          // Title
                           Text(
                             widget.isSetup ? 'Create Your PIN' : 'Change Your PIN',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: screenHeight * 0.024,
                               fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          SizedBox(height: screenHeight * 0.01),
-                          Text(
-                            widget.isSetup 
-                                ? 'Set up a PIN for secure access when biometric authentication is not available'
-                                : 'Enter your current PIN and create a new one',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: screenHeight * 0.016,
                             ),
                           ),
                           
@@ -279,12 +272,15 @@ class _PinSetupPageState extends State<PinSetupPage> {
                               });
                             },
                             onChanged: (value) {
+                              // debugPrint('🔐 PIN Setup: PIN onChanged called with value: "$value"');
                               setState(() {
                                 _pin = value;
                                 _errorMessage = '';
                               });
                             },
                           ),
+                          
+                          SizedBox(height: screenHeight * 0.02),
                           
                           // Confirm PIN input field
                           _buildPinInputField(
@@ -299,6 +295,7 @@ class _PinSetupPageState extends State<PinSetupPage> {
                               });
                             },
                             onChanged: (value) {
+                              // debugPrint('🔐 PIN Setup: Confirm PIN onChanged called with value: "$value"');
                               setState(() {
                                 _confirmPin = value;
                                 _errorMessage = '';
@@ -308,9 +305,9 @@ class _PinSetupPageState extends State<PinSetupPage> {
                           
                           // Error message
                           if (_errorMessage.isNotEmpty) ...[
+                            SizedBox(height: screenHeight * 0.02),
                             Container(
                               padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 20),
                               decoration: BoxDecoration(
                                 color: Colors.red.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(8),
@@ -340,6 +337,9 @@ class _PinSetupPageState extends State<PinSetupPage> {
                               ),
                             ),
                           ],
+                          
+                          // Spacing before buttons
+                          SizedBox(height: screenHeight * 0.03),
                           
                           // Action buttons
                           Row(

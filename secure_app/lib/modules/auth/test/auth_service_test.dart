@@ -153,7 +153,7 @@ void main() {
     group('Stored Credentials Tests', () {
       test('should handle get stored credentials without throwing', () async {
         try {
-          await authService.getStoredCredentials();
+          await authService.getCurrentUser();
         } catch (e) {
           // Expected to fail in test environment due to missing plugin
           expect(e, isA<AuthException>());
@@ -162,7 +162,7 @@ void main() {
 
       test('should handle auto login without throwing', () async {
         try {
-          await authService.autoLogin();
+          await authService.signInWithBiometric();
         } catch (e) {
           // Expected to fail in test environment due to missing plugin
           expect(e, isA<AuthException>());
@@ -173,7 +173,7 @@ void main() {
     group('Token Refresh Tests', () {
       test('should handle token refresh without throwing', () async {
         try {
-          await authService.refreshToken();
+          await authService.signInWithBiometric();
         } catch (e) {
           // Expected to fail in test environment due to missing plugin
           expect(e, isA<AuthException>());
