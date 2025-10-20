@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../core/services/redirect_service.dart';
 import 'route_constants.dart';
 
 /// Navigation helper class
@@ -63,9 +64,48 @@ class NavigationHelper {
     context.go(RouteConstants.home);
   }
 
+  /// Navigate after successful authentication with redirect support
+  /// This method checks if there's a stored redirect location and navigates there,
+  /// otherwise navigates to home
+  static void goAfterLogin(BuildContext context) {
+    // debugPrint('🔄 NavigationHelper: goAfterLogin called');
+    final redirectService = RedirectService.instance;
+    
+    // debugPrint('🔄 NavigationHelper: Checking for redirect location...');
+    final hasRedirect = redirectService.hasRedirectLocation();
+    // debugPrint('🔄 NavigationHelper: Has redirect location: $hasRedirect');
+    
+    if (hasRedirect) {
+      final redirectPath = redirectService.getRedirectPath();
+      final redirectQueryParams = redirectService.getRedirectQueryParams();
+      
+      // debugPrint('🔄 NavigationHelper: Redirecting to stored location - $redirectPath');
+      // debugPrint('🔄 NavigationHelper: Redirect query params: $redirectQueryParams');
+      
+      // Navigate to the stored location
+      if (redirectQueryParams != null && redirectQueryParams.isNotEmpty) {
+        // debugPrint('🔄 NavigationHelper: Navigating with query params');
+        goToWithParams(context, redirectPath!, queryParams: redirectQueryParams.cast<String, String>());
+      } else {
+        // debugPrint('🔄 NavigationHelper: Navigating without query params');
+        context.go(redirectPath!);
+      }
+      
+      // Clear the stored redirect location
+      // debugPrint('🔄 NavigationHelper: Clearing redirect location');
+      redirectService.clearRedirectLocation();
+    } else {
+      // No redirect location, go to home
+      // debugPrint('🔄 NavigationHelper: No redirect location, going to home');
+      // debugPrint('🔄 NavigationHelper: Calling context.go(${RouteConstants.home})');
+      context.go(RouteConstants.home);
+      // debugPrint('🔄 NavigationHelper: Navigation call completed');
+    }
+  }
+
   /// Navigate to profile page
   static void goToProfile(BuildContext context) {
-    context.go(RouteConstants.profile);
+    context.push(RouteConstants.profile);
   }
 
   /// Navigate to settings page

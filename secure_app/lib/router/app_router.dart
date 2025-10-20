@@ -5,7 +5,9 @@ import '../modules/auth/presentation/signup_page.dart';
 import '../modules/auth/presentation/biometric_settings_page.dart';
 import '../modules/home/presentation/home_page.dart';
 import '../modules/profile/presentation/profile_page.dart';
-import '../core/widgets/app_lockout_debug_page.dart';
+import '../core/services/app_lockout_service.dart';
+import '../core/services/redirect_service.dart';
+import '../core/services/auth_service.dart';
 import 'route_constants.dart';
 
 /// Main application router configuration
@@ -177,13 +179,6 @@ class AppRouter {
         },
       ),
       
-      GoRoute(
-        path: RouteConstants.appLockoutDebug,
-        name: 'app-lockout-debug',
-        builder: (context, state) {
-          return const AppLockoutDebugPage();
-        },
-      ),
      
     ],
     
@@ -192,6 +187,8 @@ class AppRouter {
     redirect: (context, state) async {
       // Get the current location
       final String location = state.uri.path;
+      
+      // debugPrint('🔄 Router redirect: Checking location: $location');
       
       // List of routes that don't require authentication
       const List<String> publicRoutes = [
@@ -203,16 +200,54 @@ class AppRouter {
       
       // Check if current route is public
       final bool isPublicRoute = publicRoutes.contains(location);
+      // debugPrint('🔄 Router redirect: Is public route: $isPublicRoute');
       
-      // For now, allow access to home and profile pages without authentication check
-      // TODO: Implement proper authentication state management
-      if (location == RouteConstants.home || location == RouteConstants.profile) {
-        return null; // Allow access to home and profile pages
+      // Check if app is locked - if so, redirect to sign in
+      try {
+        final appLockoutService = AppLockoutService.instance;
+        final isAppLocked = await appLockoutService.isAppLocked();
+        
+        // debugPrint('🔒 App lockout check - Location: $location, Is locked: $isAppLocked, Is public: $isPublicRoute');
+        
+        if (isAppLocked && !isPublicRoute) {
+          // debugPrint('🔒 App is locked, redirecting to sign in');
+          
+          // Store the current location for redirect after login
+          final redirectService = RedirectService.instance;
+          redirectService.storeRedirectLocation(location, state.uri.queryParameters);
+          
+          return RouteConstants.signIn;
+        } else if (isAppLocked && isPublicRoute) {
+          // debugPrint('🔒 App is locked but on public route - allowing access');
+        } else {
+          // debugPrint('🔒 App is not locked - allowing navigation');
+        }
+      } catch (e) {
+        // debugPrint('🔒 Error checking app lockout status: $e');
+        // If we can't check lockout status, allow access for now
       }
       
-      // If user is not authenticated and trying to access protected route
-      if (!isPublicRoute && location != RouteConstants.home) {
-        return RouteConstants.signIn;
+      // Only check authentication for protected routes (not public routes like sign-in)
+      if (!isPublicRoute) {
+        try {
+          // debugPrint('🔐 Checking authentication for protected route: $location');
+          final authService = AuthService.instance;
+          final isAuthenticated = await authService.isLoggedIn();
+          // debugPrint('🔐 Authentication status: $isAuthenticated');
+          
+          if (!isAuthenticated) {
+            // debugPrint('🔐 User not authenticated, redirecting to sign in');
+            return RouteConstants.signIn;
+          } else {
+            // debugPrint('🔐 User is authenticated, allowing navigation to: $location');
+          }
+        } catch (e) {
+          // debugPrint('🔐 Error checking authentication status: $e');
+          // If we can't check auth status, redirect to sign in for safety
+          return RouteConstants.signIn;
+        }
+      } else {
+        // debugPrint('🔐 Public route, skipping authentication check');
       }
       
       // No redirect needed

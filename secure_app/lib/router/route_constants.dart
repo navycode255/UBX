@@ -15,7 +15,6 @@ class RouteConstants {
   static const String profile = '/profile';
   static const String settings = '/settings';
   static const String biometricSettings = '/biometric-settings';
-  static const String appLockoutDebug = '/app-lockout-debug';
   
   // Error Routes
   static const String notFound = '/404';
