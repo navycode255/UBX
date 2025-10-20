@@ -1,6 +1,8 @@
-import 'api_service.dart';
+import 'package:flutter/foundation.dart';
+import 'local_database_service.dart';
 import 'secure_storage_service.dart';
 import 'biometric_service.dart';
+import 'pin_service.dart';
 
 /// Authentication Service
 /// 
@@ -15,9 +17,10 @@ class AuthService {
   static AuthService get instance => _instance;
   AuthService._internal();
 
-  final ApiService _apiService = ApiService();
+  final LocalDatabaseService _database = LocalDatabaseService.instance;
   final SecureStorageService _secureStorage = SecureStorageService.instance;
   final BiometricService _biometricService = BiometricService.instance;
+  final PinService _pinService = PinService.instance;
 
   /// Sign in user with email and password
   Future<AuthResult> signIn({
@@ -25,56 +28,53 @@ class AuthService {
     required String password,
   }) async {
     try {
-
+      // debugPrint('🔐 AuthService: Starting sign in for email: $email');
       
       // Check if credentials are provided
       if (email.isEmpty || password.isEmpty) {
+        // debugPrint('🔐 AuthService: Empty credentials provided');
         return AuthResult.failure('Please enter both email and password');
       }
       
-      // Test API connection
-      final healthResponse = await _apiService.healthCheck();
+      // Test database connection
+      // debugPrint('🔐 AuthService: Testing database connection...');
+      final healthResponse = await _database.healthCheck();
+      // debugPrint('🔐 AuthService: Health check result: ${healthResponse.success} - ${healthResponse.message}');
       if (!healthResponse.success) {
-        return AuthResult.failure('API connection failed. Please try again.');
+        return AuthResult.failure('Database connection failed. Please try again.');
       }
       
-      // Authenticate with API
-      final authResponse = await _apiService.authenticateUser(
+      // Authenticate with local database
+      // debugPrint('🔐 AuthService: Authenticating user via database - email: $email');
+      final authResponse = await _database.authenticateUser(
         email: email,
         password: password,
       );
+      
+      // debugPrint('🔐 AuthService: Auth response: ${authResponse.success} - ${authResponse.message}');
+      // debugPrint('🔐 AuthService: Auth data: ${authResponse.data}');
       
       if (!authResponse.success) {
         return AuthResult.failure(authResponse.errorMessage);
       }
       
-      // Get user data from API response
-      final userData = authResponse.userData;
-      if (userData == null) {
-        return AuthResult.failure('User data not found');
-      }
+      // Use the actual user data from database response
+      final actualUserData = authResponse.data ?? {
+        'user_id': 'test_user_123',
+        'name': 'Test User',
+        'email': email,
+      };
       
-      // Debug: Log the user data structure
-      try {
-
-
-
-
-      } catch (e) {
-
-      }
+      // Generate auth tokens
+      final authToken = 'token_${DateTime.now().millisecondsSinceEpoch}';
+      final refreshToken = 'refresh_${DateTime.now().millisecondsSinceEpoch}';
       
-      // Extract user data from nested structure
-      final actualUserData = userData['data'] as Map<String, dynamic>?;
-      if (actualUserData == null) {
-
-        return AuthResult.failure('Invalid user data structure');
-      }
-      
-
-
-
-
+      // Create user session in database
+      await _database.createUserSession(
+        userId: actualUserData['user_id'] ?? '',
+        authToken: authToken,
+        refreshToken: refreshToken,
+      );
       
       // Store user data in secure storage
       await _secureStorage.storeUserCredentials(
@@ -82,17 +82,25 @@ class AuthService {
         password: password, // Store for auto-login
         name: actualUserData['name'] ?? '',
         userId: actualUserData['user_id'] ?? '',
-        authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
-        refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
+        authToken: authToken,
+        refreshToken: refreshToken,
       );
       
       // Debug: Verify what was stored
-      final storedUserId = await _secureStorage.getUserId();
+      await _secureStorage.getUserId();
 
+      // Enable biometric authentication for this user
+      final biometricService = BiometricService.instance;
+      await biometricService.enableBiometricLogin(
+        email: actualUserData['email'] ?? email,
+        token: authToken,
+        userId: actualUserData['user_id'] ?? '',
+        name: actualUserData['name'] ?? '',
+      );
       
       await _secureStorage.setLoggedIn(true);
-      // Don't lock immediately after sign in - let the user use the app first
-      // The app will lock when paused/detached
+      // Unlock the app after successful authentication
+      await _secureStorage.setAppLocked(false);
       
       return AuthResult.success('Sign in successful');
     } catch (e) {
@@ -116,56 +124,46 @@ class AuthService {
         return AuthResult.failure('Password must be at least 6 characters');
       }
       
-      // Test API connection
-      final healthResponse = await _apiService.healthCheck();
+      // Test database connection
+      // debugPrint('🔐 AuthService: Testing database connection for signup...');
+      final healthResponse = await _database.healthCheck();
+      // debugPrint('🔐 AuthService: Health check result: ${healthResponse.success} - ${healthResponse.message}');
       if (!healthResponse.success) {
-        return AuthResult.failure('API connection failed. Please try again.');
+        return AuthResult.failure('Database connection failed. Please try again.');
       }
       
-      // Create user via API
-      final createResponse = await _apiService.createUser(
+      // Create user via database
+      // debugPrint('🔐 AuthService: Creating user via database - name: $name, email: $email');
+      final createResponse = await _database.createUser(
         name: name,
         email: email,
         password: password,
       );
       
+      // debugPrint('🔐 AuthService: Create user response: ${createResponse.success} - ${createResponse.message}');
+      // debugPrint('🔐 AuthService: Create user data: ${createResponse.data}');
+      
       if (!createResponse.success) {
         return AuthResult.failure(createResponse.errorMessage);
       }
       
-      // Extract user data from API response
-
-
-
-
+      // Use the actual user data from database response
+      final actualUserData = createResponse.data ?? {
+        'user_id': 'user_${DateTime.now().millisecondsSinceEpoch}',
+        'name': name,
+        'email': email,
+      };
       
-      final userData = createResponse.userData;
-      if (userData == null) {
-        return AuthResult.failure('User data not received from server');
-      }
+      // Generate auth tokens
+      final authToken = 'token_${DateTime.now().millisecondsSinceEpoch}';
+      final refreshToken = 'refresh_${DateTime.now().millisecondsSinceEpoch}';
       
-
-
-      
-      // Extract actual user data from nested structure
-      // Check if this is the direct user data structure first
-      Map<String, dynamic> actualUserData;
-      if ((userData.containsKey('user_id') || userData.containsKey('userId')) && 
-          userData.containsKey('name') && 
-          userData.containsKey('email')) {
-
-        actualUserData = userData;
-      } else {
-        // Try nested structure
-        final nestedData = userData['data'] as Map<String, dynamic>?;
-        if (nestedData == null) {
-
-          return AuthResult.failure('Invalid user data structure');
-        }
-        actualUserData = nestedData;
-      }
-      
-
+      // Create user session in database
+      await _database.createUserSession(
+        userId: actualUserData['user_id'] ?? '',
+        authToken: authToken,
+        refreshToken: refreshToken,
+      );
       
       // Store user credentials in secure storage
       await _secureStorage.storeUserCredentials(
@@ -173,17 +171,20 @@ class AuthService {
         password: password, // Store for auto-login
         name: actualUserData['name'] ?? name,
         userId: actualUserData['user_id'] ?? actualUserData['userId'] ?? '',
-        authToken: 'token_${DateTime.now().millisecondsSinceEpoch}',
-        refreshToken: 'refresh_${DateTime.now().millisecondsSinceEpoch}',
+        authToken: authToken,
+        refreshToken: refreshToken,
       );
       
       // Debug: Verify what was stored
-      final storedUserId = await _secureStorage.getUserId();
+      await _secureStorage.getUserId();
 
       
+      // Reset biometric and PIN settings for new user
+      await _resetSecuritySettingsForNewUser();
+      
       await _secureStorage.setLoggedIn(true);
-      // Don't lock immediately after sign up - let the user use the app first
-      // The app will lock when paused/detached
+      // Unlock the app after successful authentication
+      await _secureStorage.setAppLocked(false);
       
       return AuthResult.success('Account created and signed in successfully');
     } catch (e) {
@@ -229,8 +230,8 @@ class AuthService {
       );
 
       await _secureStorage.setLoggedIn(true);
-      // Don't lock immediately after biometric sign in - let the user use the app first
-      // The app will lock when paused/detached
+      // Unlock the app after successful authentication
+      await _secureStorage.setAppLocked(false);
 
       return AuthResult.success('Biometric sign-in successful');
     } catch (e) {
@@ -241,16 +242,14 @@ class AuthService {
   /// Fetch user data from database using stored token
   Future<DatabaseResult> _fetchUserDataFromDatabase(String userId, String token) async {
     try {
-
-      
-      // Test API connection first
-      final healthResponse = await _apiService.healthCheck();
-      if (!healthResponse.success) {
-        return DatabaseResult.failure('API connection failed');
+      // Verify session is valid
+      final sessionResponse = await _database.getUserSessionByToken(token);
+      if (!sessionResponse.success) {
+        return DatabaseResult.failure('Session expired or invalid');
       }
 
-      // Fetch user profile data from API
-      final userResponse = await _apiService.getUserById(userId);
+      // Fetch user profile data from database
+      final userResponse = await _database.getUserById(userId);
       
       if (!userResponse.success) {
         return DatabaseResult.failure(userResponse.errorMessage);
@@ -261,29 +260,8 @@ class AuthService {
         return DatabaseResult.failure('User data not found');
       }
 
-
-
-
-      // The API response structure is direct user data, not nested
-      // Check if this is the direct user data structure
-      if ((userData.containsKey('user_id') || userData.containsKey('userId')) && 
-          userData.containsKey('name') && 
-          userData.containsKey('email')) {
-
-        return DatabaseResult.success(userData);
-      }
-      
-      // Fallback: try nested structure
-      final actualUserData = userData['data'] as Map<String, dynamic>?;
-      if (actualUserData == null) {
-
-        return DatabaseResult.failure('Invalid user data structure - no data field found');
-      }
-
-
-      return DatabaseResult.success(actualUserData);
+      return DatabaseResult.success(userData);
     } catch (e) {
-
       return DatabaseResult.failure('Failed to fetch user data: ${e.toString()}');
     }
   }
@@ -291,6 +269,12 @@ class AuthService {
   /// Sign out user
   Future<void> signOut() async {
     try {
+      // Get current auth token to delete session
+      final authToken = await _secureStorage.getAuthToken();
+      if (authToken != null) {
+        await _database.deleteUserSession(authToken);
+      }
+      
       // Clear user data but preserve biometric settings
       await _secureStorage.clearUserData();
       // Clear app lockout state
@@ -305,8 +289,11 @@ class AuthService {
   /// Check if user is logged in
   Future<bool> isLoggedIn() async {
     try {
-      return await _secureStorage.isLoggedIn();
+      final result = await _secureStorage.isLoggedIn();
+      // debugPrint('🔐 AuthService: isLoggedIn result: $result');
+      return result;
     } catch (e) {
+      // debugPrint('🔐 AuthService: Error checking login status: $e');
       return false;
     }
   }
@@ -406,6 +393,22 @@ class AuthService {
       await _secureStorage.clearAll();
     } catch (e) {
       throw AuthException('Failed to clear credentials: ${e.toString()}');
+    }
+  }
+
+  /// Reset security settings for new user (disable biometrics and PIN)
+  Future<void> _resetSecuritySettingsForNewUser() async {
+    try {
+      // Disable biometric login
+      await _biometricService.disableBiometricLogin();
+      
+      // Disable PIN (clear PIN data without verification since it's a new user)
+      await _pinService.resetPinForNewUser();
+      
+      print('🔒 Security settings reset for new user - biometrics and PIN disabled');
+    } catch (e) {
+      print('⚠️ Failed to reset security settings for new user: $e');
+      // Don't throw error as this shouldn't block signup
     }
   }
 }

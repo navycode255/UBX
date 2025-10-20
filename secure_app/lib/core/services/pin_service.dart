@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'secure_storage_service.dart';
 
 /// PIN Service for Biometric Fallback
@@ -100,12 +101,8 @@ class PinService {
   Future<PinResult> setupPin(String pin) async {
     try {
       // Validate PIN
-      if (pin.length < 4) {
-        return PinResult.failure('PIN must be at least 4 digits');
-      }
-
-      if (pin.length > 8) {
-        return PinResult.failure('PIN must be no more than 8 digits');
+      if (pin.length != 4) {
+        return PinResult.failure('PIN must be exactly 4 digits');
       }
 
       // Hash the PIN for secure storage
@@ -127,46 +124,85 @@ class PinService {
   /// Verify PIN authentication
   Future<PinResult> verifyPin(String pin) async {
     try {
+      // debugPrint('🔐 PinService: ===== STARTING PIN VERIFICATION =====');
+      // debugPrint('🔐 PinService: PIN received: "$pin" (length: ${pin.length})');
+      
       // Check if PIN is locked
-      if (await isPinLocked()) {
+      // debugPrint('🔐 PinService: Checking if PIN is locked...');
+      final isLocked = await isPinLocked();
+      // debugPrint('🔐 PinService: PIN locked check result: $isLocked');
+      
+      if (isLocked) {
+        // debugPrint('❌ PinService: PIN is locked');
         final remainingTime = await getLockoutTimeRemaining();
+        // debugPrint('🔐 PinService: Remaining lockout time: ${remainingTime}s');
         return PinResult.failure('PIN is locked. Try again in ${remainingTime}s');
       }
 
+      // debugPrint('✅ PinService: PIN is not locked, checking if enabled...');
+      
       // Check if PIN is enabled
-      if (!await isPinEnabled()) {
+      final isEnabled = await isPinEnabled();
+      // debugPrint('🔐 PinService: PIN enabled check result: $isEnabled');
+      
+      if (!isEnabled) {
+        // debugPrint('❌ PinService: PIN authentication is not enabled');
         return PinResult.failure('PIN authentication is not enabled');
       }
 
+      // debugPrint('✅ PinService: PIN is enabled, retrieving stored hash...');
+
       // Get stored PIN hash
+      // debugPrint('🔐 PinService: Getting stored PIN hash from secure storage...');
       final storedHash = await _secureStorage.getString(_pinHashKey);
+      // debugPrint('🔐 PinService: Stored hash retrieved: ${storedHash != null ? "Present" : "Missing"}');
+      
       if (storedHash == null) {
+        // debugPrint('❌ PinService: No PIN found in storage');
         return PinResult.failure('No PIN found. Please setup PIN first');
       }
 
-      // Hash the provided PIN
-      final providedHash = _hashPin(pin);
+      // debugPrint('✅ PinService: Stored hash found, hashing provided PIN...');
 
+      // Hash the provided PIN
+      // debugPrint('🔐 PinService: Hashing provided PIN: "$pin"');
+      final providedHash = _hashPin(pin);
+      // debugPrint('🔐 PinService: Provided hash: $providedHash');
+      // debugPrint('🔐 PinService: Stored hash: $storedHash');
+
+      // debugPrint('🔐 PinService: Comparing hashes...');
       // Compare hashes
       if (storedHash == providedHash) {
+        // debugPrint('✅ PinService: PIN hashes match! PIN is correct');
         // PIN is correct, reset attempts
+        // debugPrint('🔐 PinService: Resetting PIN attempts...');
         await _resetAttempts();
+        // debugPrint('🔐 PinService: PIN attempts reset successfully');
 
+        // debugPrint('🔐 PinService: ===== PIN VERIFICATION SUCCESSFUL =====');
         return PinResult.success('PIN verification successful');
       } else {
+        // debugPrint('❌ PinService: PIN hashes do not match! PIN is incorrect');
         // PIN is incorrect, increment attempts
+        // debugPrint('🔐 PinService: Incrementing PIN attempts...');
         await _incrementAttempts();
         final remainingAttempts = await getRemainingAttempts();
+        // debugPrint('🔐 PinService: Remaining attempts after increment: $remainingAttempts');
         
         if (remainingAttempts <= 0) {
+          // debugPrint('❌ PinService: No attempts remaining, locking PIN...');
           await _lockPin();
+          // debugPrint('🔐 PinService: PIN locked due to too many failed attempts');
           return PinResult.failure('PIN locked due to too many failed attempts');
         }
         
+        // debugPrint('🔐 PinService: ===== PIN VERIFICATION FAILED =====');
         return PinResult.failure('Incorrect PIN. $remainingAttempts attempts remaining');
       }
     } catch (e) {
-
+      // debugPrint('❌ PinService: PIN verification error: $e');
+      // debugPrint('❌ PinService: Stack trace: ${StackTrace.current}');
+      // debugPrint('🔐 PinService: ===== PIN VERIFICATION ERROR =====');
       return PinResult.failure('Failed to verify PIN: $e');
     }
   }
@@ -191,21 +227,37 @@ class PinService {
   /// Disable PIN authentication
   Future<PinResult> disablePin(String currentPin) async {
     try {
+      // debugPrint('🔐 PinService: ===== STARTING PIN DISABLE =====');
+      // debugPrint('🔐 PinService: PIN received: "$currentPin" (length: ${currentPin.length})');
+      
       // Verify current PIN first
+      // debugPrint('🔐 PinService: Verifying current PIN before disable...');
       final verifyResult = await verifyPin(currentPin);
+      // debugPrint('🔐 PinService: PIN verification result - Success: ${verifyResult.isSuccess}, Message: ${verifyResult.message}');
+      
       if (!verifyResult.isSuccess) {
+        // debugPrint('❌ PinService: PIN verification failed, cannot disable PIN');
+        // debugPrint('🔐 PinService: ===== PIN DISABLE FAILED - VERIFICATION FAILED =====');
         return verifyResult;
       }
 
+      // debugPrint('✅ PinService: PIN verification successful, proceeding to disable...');
+
       // Clear PIN data
+      // debugPrint('🔐 PinService: Deleting PIN enabled key...');
       await _secureStorage.delete(_pinEnabledKey);
+      // debugPrint('🔐 PinService: Deleting PIN hash key...');
       await _secureStorage.delete(_pinHashKey);
+      // debugPrint('🔐 PinService: Clearing PIN lockout...');
       await _clearLockout();
 
-
+      // debugPrint('✅ PinService: PIN data cleared successfully');
+      // debugPrint('🔐 PinService: ===== PIN DISABLE COMPLETED SUCCESSFULLY =====');
       return PinResult.success('PIN disabled successfully');
     } catch (e) {
-
+      // debugPrint('❌ PinService: PIN disable error: $e');
+      // debugPrint('❌ PinService: Stack trace: ${StackTrace.current}');
+      // debugPrint('🔐 PinService: ===== PIN DISABLE FAILED WITH ERROR =====');
       return PinResult.failure('Failed to disable PIN: $e');
     }
   }
@@ -251,6 +303,21 @@ class PinService {
       await _secureStorage.delete(_pinLockoutTimeKey);
     } catch (e) {
 
+    }
+  }
+
+  /// Reset PIN for new user (clear PIN data without verification)
+  Future<void> resetPinForNewUser() async {
+    try {
+      // Clear all PIN-related data
+      await _secureStorage.delete(_pinEnabledKey);
+      await _secureStorage.delete(_pinHashKey);
+      await _clearLockout();
+      
+      print('🔒 PIN reset for new user - PIN disabled');
+    } catch (e) {
+      print('⚠️ Failed to reset PIN for new user: $e');
+      // Don't throw error as this shouldn't block signup
     }
   }
 }

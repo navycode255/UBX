@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// This service handles secure storage of sensitive user data using Flutter Secure Storage
@@ -152,9 +153,12 @@ class SecureStorageService {
   Future<bool> isLoggedIn() async {
     try {
       final value = await _storage.read(key: _isLoggedInKey);
+      // debugPrint('🔐 SecureStorage: isLoggedIn value: $value');
       return value == 'true';
     } catch (e) {
-      throw SecureStorageException('Failed to check login status: $e');
+      // debugPrint('🔐 SecureStorage: Error checking login status: $e');
+      // Return false instead of throwing exception to prevent router issues
+      return false;
     }
   }
 

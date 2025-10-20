@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
 import 'secure_storage_service.dart';
 import 'pin_service.dart';
@@ -19,6 +20,8 @@ class BiometricService {
   BiometricService._internal() {
     _checkAndResetAttemptCount();
   }
+
+
 
   // Local authentication instance
   final LocalAuthentication _localAuth = LocalAuthentication();
@@ -178,21 +181,38 @@ class BiometricService {
     }
   }
 
+  /// Reset biometric attempts and try authentication (for when user tries again after canceling PIN fallback)
+  Future<BiometricLoginResult?> authenticateWithReset() async {
+    try {
+      // Reset attempt count when user tries again
+      await _resetBiometricAttemptCount();
+      // debugPrint('🔐 BiometricService: Reset biometric attempts, trying fresh authentication');
+      
+      // Now try biometric authentication
+      return await authenticateWithFallback();
+    } catch (e) {
+      // debugPrint('🔐 BiometricService: Authentication reset error: $e');
+      return null;
+    }
+  }
+
   /// Authenticate with biometric or PIN fallback (single attempt)
   Future<BiometricLoginResult?> authenticateWithFallback() async {
     try {
       // Get current attempt count
       final attemptCount = await _getBiometricAttemptCount();
       
-      // If we've reached the limit, show PIN fallback
+      // If we've reached the limit, check if PIN fallback is available
       if (attemptCount >= 3) {
-
-        return await _showPinFallbackAfterLimit();
+        final isPinEnabled = await _pinService.isPinEnabled();
+        if (isPinEnabled) {
+          return BiometricLoginResult.failure('Biometric authentication failed. Maximum attempts reached. Please use PIN fallback.', requiresPinFallback: true);
+        } else {
+          return BiometricLoginResult.failure('Biometric authentication failed. Maximum attempts reached. PIN fallback is not set up. Please sign in with email and password.');
+        }
       }
 
       // Try single biometric authentication attempt
-
-      
       final biometricResult = await _tryBiometricAuthentication();
       if (biometricResult != null) {
         // Reset attempt count on success
@@ -204,16 +224,20 @@ class BiometricService {
       await _incrementBiometricAttemptCount();
       final newAttemptCount = await _getBiometricAttemptCount();
       
-      // If we've reached the limit after this attempt, show PIN fallback
+      // If we've reached the limit after this attempt, check if PIN fallback is available
       if (newAttemptCount >= 3) {
-
-        return await _showPinFallbackAfterLimit();
+        final isPinEnabled = await _pinService.isPinEnabled();
+        if (isPinEnabled) {
+          return BiometricLoginResult.failure('Biometric authentication failed. Maximum attempts reached. Please use PIN fallback.', requiresPinFallback: true);
+        } else {
+          return BiometricLoginResult.failure('Biometric authentication failed. Maximum attempts reached. PIN fallback is not set up. Please sign in with email and password.');
+        }
       }
 
       // Return failure with attempt info
       return BiometricLoginResult.failure('Biometric authentication failed. Attempt $newAttemptCount/3');
     } catch (e) {
-
+      // debugPrint('🔐 BiometricService: Authentication error: $e');
       return null;
     }
   }
@@ -302,52 +326,107 @@ class BiometricService {
     // Check if PIN is available as fallback
     final isPinEnabled = await _pinService.isPinEnabled();
     if (!isPinEnabled) {
-
-      return BiometricLoginResult.failure('Biometric authentication failed. PIN not set up.');
+      // No PIN fallback available - return failure with helpful message
+      return BiometricLoginResult.failure('Biometric authentication failed. PIN fallback is not set up. Please sign in with email and password or set up PIN in settings.');
     }
 
     // Check if PIN is locked
     final isPinLocked = await _pinService.isPinLocked();
     if (isPinLocked) {
-
       return BiometricLoginResult.failure('PIN is locked due to too many failed attempts.');
     }
 
     // Return a special result indicating PIN fallback is needed
-
     return BiometricLoginResult.pinFallbackRequired('Biometric authentication failed 3 times. Please use PIN to continue.');
   }
 
   /// Authenticate with PIN fallback
   Future<BiometricLoginResult?> authenticateWithPin(String pin) async {
     try {
+      // debugPrint('🔐 BiometricService: ===== STARTING PIN AUTHENTICATION =====');
+      // debugPrint('🔐 BiometricService: PIN received: "$pin" (length: ${pin.length})');
+      
+      // Check if PIN is enabled first
+      // debugPrint('🔐 BiometricService: Checking if PIN is enabled...');
+      final isPinEnabled = await _pinService.isPinEnabled();
+      // debugPrint('🔐 BiometricService: PIN enabled check result: $isPinEnabled');
+      
+      if (!isPinEnabled) {
+        // debugPrint('❌ BiometricService: PIN authentication is not enabled');
+        // debugPrint('🔐 BiometricService: Returning failure result');
+        return BiometricLoginResult.failure('PIN authentication is not enabled. Please set up PIN in settings.');
+      }
+      
+      // debugPrint('✅ BiometricService: PIN is enabled, proceeding with verification');
+      
       // Verify PIN
+      // debugPrint('🔐 BiometricService: Calling _pinService.verifyPin("$pin")');
       final pinResult = await _pinService.verifyPin(pin);
+      // debugPrint('🔐 BiometricService: PIN verification completed');
+      // debugPrint('🔐 BiometricService: PIN verification success: ${pinResult.isSuccess}');
+      // debugPrint('🔐 BiometricService: PIN verification message: ${pinResult.message}');
+      
       if (!pinResult.isSuccess) {
+        // debugPrint('❌ BiometricService: PIN verification failed');
+        // debugPrint('🔐 BiometricService: Returning failure result with message: ${pinResult.message}');
+        return BiometricLoginResult.failure(pinResult.message);
+      }
 
+      // debugPrint('✅ BiometricService: PIN verification successful, retrieving user credentials');
+
+      // Get user credentials from regular authentication storage
+      // debugPrint('🔐 BiometricService: Getting stored email...');
+      final storedEmail = await _secureStorage.getEmail();
+      // debugPrint('🔐 BiometricService: Stored email: $storedEmail');
+      
+      // debugPrint('🔐 BiometricService: Getting stored userId...');
+      final storedUserId = await _secureStorage.getUserId();
+      // debugPrint('🔐 BiometricService: Stored userId: $storedUserId');
+      
+      // debugPrint('🔐 BiometricService: Getting stored name...');
+      final storedName = await _secureStorage.getName();
+      // debugPrint('🔐 BiometricService: Stored name: $storedName');
+      
+      // debugPrint('🔐 BiometricService: Getting stored token...');
+      final storedToken = await _secureStorage.getAuthToken();
+      // debugPrint('🔐 BiometricService: Stored token: $storedToken');
+
+      // debugPrint('🔐 BiometricService: Checking if all credentials are present...');
+      // debugPrint('  - Email: ${storedEmail != null ? "✅ Present" : "❌ Missing"}');
+      // debugPrint('  - UserId: ${storedUserId != null ? "✅ Present" : "❌ Missing"}');
+      // debugPrint('  - Name: ${storedName != null ? "✅ Present" : "❌ Missing"}');
+      // debugPrint('  - Token: ${storedToken != null ? "✅ Present" : "❌ Missing"}');
+
+      if (storedEmail == null || storedUserId == null || storedName == null || storedToken == null) {
+        // debugPrint('❌ BiometricService: Missing user credentials for PIN fallback');
+        // debugPrint('🔐 BiometricService: Cannot proceed with authentication');
+        // debugPrint('🔐 BiometricService: Returning null result');
         return null;
       }
 
-      // Get stored credentials (same as biometric)
-      final storedToken = await _secureStorage.getString(_biometricLoginTokenKey);
-      final storedEmail = await _secureStorage.getString(_biometricLoginEmailKey);
-      final storedUserId = await _secureStorage.getString('biometric_user_id');
-      final storedName = await _secureStorage.getString('biometric_user_name');
+      // debugPrint('✅ BiometricService: All credentials present, creating success result');
+      // debugPrint('🔐 BiometricService: Creating BiometricLoginResult.success with:');
+      // debugPrint('  - Email: $storedEmail');
+      // debugPrint('  - UserId: $storedUserId');
+      // debugPrint('  - Name: $storedName');
+      // debugPrint('  - Token: $storedToken');
 
-      if (storedToken == null || storedEmail == null || storedUserId == null || storedName == null) {
-
-        return null;
-      }
-
-
-      return BiometricLoginResult.success(
+      final result = BiometricLoginResult.success(
         email: storedEmail,
         token: storedToken,
         userId: storedUserId,
         name: storedName,
       );
+      
+      // debugPrint('🔐 BiometricService: Success result created: $result');
+      // debugPrint('🔐 BiometricService: Result isSuccess: ${result.isSuccess}');
+      // debugPrint('🔐 BiometricService: ===== PIN AUTHENTICATION COMPLETED SUCCESSFULLY =====');
+      
+      return result;
     } catch (e) {
-
+      // debugPrint('❌ BiometricService: PIN authentication error: $e');
+      // debugPrint('❌ BiometricService: Stack trace: ${StackTrace.current}');
+      // debugPrint('🔐 BiometricService: ===== PIN AUTHENTICATION FAILED =====');
       return null;
     }
   }
@@ -582,9 +661,9 @@ class BiometricLoginResult {
   }
 
   /// Create a failure result
-  factory BiometricLoginResult.failure(String message) {
+  factory BiometricLoginResult.failure(String message, {bool requiresPinFallback = false}) {
     return BiometricLoginResult(
-      isPinFallbackRequired: false,
+      isPinFallbackRequired: requiresPinFallback,
       message: message,
     );
   }
