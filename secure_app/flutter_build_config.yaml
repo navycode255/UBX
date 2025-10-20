@@ -1,0 +1,37 @@
+# Flutter Build Configuration for Secure App
+# This file contains build configurations for different environments
+
+# Development build (no obfuscation)
+development:
+  obfuscate: false
+  split-debug-info: false
+  tree-shake-icons: false
+  track-widget-creation: true
+
+# Staging build (light obfuscation)
+staging:
+  obfuscate: true
+  split-debug-info: true
+  tree-shake-icons: true
+  track-widget-creation: false
+
+# Production build (full obfuscation)
+production:
+  obfuscate: true
+  split-debug-info: true
+  tree-shake-icons: true
+  track-widget-creation: false
+  minify: true
+  shrink-resources: true
+
+# Security-focused build (maximum obfuscation)
+security:
+  obfuscate: true
+  split-debug-info: true
+  tree-shake-icons: true
+  track-widget-creation: false
+  minify: true
+  shrink-resources: true
+  remove-debug-info: true
+  strip-symbols: true
+

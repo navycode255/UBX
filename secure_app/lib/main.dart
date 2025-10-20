@@ -1,43 +1,133 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'router/app_router.dart';
-import 'core/config/env_config.dart';
-import 'core/services/database_init.dart';
+import 'core/services/app_lockout_service.dart';
 
 /// Main entry point of the application
 /// This function initializes the app and starts the router
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize environment configuration
-  await EnvConfig.init();
-  
-  // Validate environment variables
-  try {
-    EnvConfig.validate();
-  } catch (e) {
-    debugPrint('Environment validation failed: $e');
-    // Continue with default values for development
-  }
-  
-  // Initialize database
-  try {
-    await DatabaseInit.initializeDatabase();
-  } catch (e) {
-    debugPrint('Database initialization failed: $e');
-    // Continue without database for development
-  }
-  
   runApp(const ProviderScope(child: MainApp()));
 }
 
 /// Main application widget
 /// This widget sets up the router and provides the app structure
-class MainApp extends StatelessWidget {
+class MainApp extends ConsumerStatefulWidget {
   const MainApp({super.key});
 
   @override
+  ConsumerState<MainApp> createState() => _MainAppState();
+}
+
+class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
+  final AppLockoutService _appLockoutService = AppLockoutService.instance;
+  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initializeAppLockout();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Initialize app lockout service
+  Future<void> _initializeAppLockout() async {
+    try {
+      // debugPrint('🔧 MainApp: Starting app lockout initialization...');
+      await _appLockoutService.initialize();
+      // debugPrint('🔧 MainApp: App lockout initialization completed');
+      setState(() {
+        _isInitialized = true;
+      });
+    } catch (e) {
+      // debugPrint('🔧 MainApp: Error initializing app lockout: $e');
+      setState(() {
+        _isInitialized = true;
+      });
+    }
+  }
+
+  /// Handle app lifecycle state changes
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // debugPrint('📱 MainApp: App lifecycle state changed to: $state');
+    _appLockoutService.handleLifecycleStateChange(state);
+    
+    // If app is resuming and locked, force immediate redirect
+    if (state == AppLifecycleState.resumed) {
+      _checkAndRedirectIfLocked();
+    }
+  }
+
+  /// Check if app is locked and redirect immediately
+  Future<void> _checkAndRedirectIfLocked() async {
+    try {
+      final isLocked = await _appLockoutService.isAppLocked();
+      // debugPrint('📱 MainApp: Checking lock status on resume - Is locked: $isLocked');
+      
+      if (isLocked) {
+        // debugPrint('📱 MainApp: App is locked, forcing immediate redirect to sign-in');
+        
+        // Force a navigation to trigger router redirect
+        // This will cause the router to check and redirect to sign-in
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Trigger router to check current location and redirect if needed
+          final router = AppRouter.router;
+          router.refresh();
+        });
+      }
+    } catch (e) {
+      // debugPrint('📱 MainApp: Error checking lock status: $e');
+    }
+  }
+
+
+  @override
   Widget build(BuildContext context) {
+    // Show loading screen while initializing
+    if (!_isInitialized) {
+      return MaterialApp(
+        home: Scaffold(
+          body: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF8B0000), // Dark red
+                  Color(0xFF4B0082), // Purple
+                ],
+              ),
+            ),
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Initializing Security...',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return MaterialApp.router(
       // Title of the application
       title: 'Secure App',
