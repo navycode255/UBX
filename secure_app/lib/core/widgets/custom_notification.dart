@@ -16,12 +16,12 @@ class CustomNotification extends StatefulWidget {
   final VoidCallback? onDismiss;
 
   const CustomNotification({
-    Key? key,
+    super.key,
     required this.message,
     required this.type,
     this.duration = const Duration(seconds: 3),
     this.onDismiss,
-  }) : super(key: key);
+  });
 
   @override
   State<CustomNotification> createState() => _CustomNotificationState();

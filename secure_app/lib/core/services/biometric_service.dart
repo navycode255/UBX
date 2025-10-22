@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
 import 'secure_storage_service.dart';
 import 'pin_service.dart';

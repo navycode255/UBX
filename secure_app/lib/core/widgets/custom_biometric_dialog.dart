@@ -10,13 +10,13 @@ class CustomBiometricDialog extends StatefulWidget {
   final VoidCallback? onRetry;
 
   const CustomBiometricDialog({
-    Key? key,
+    super.key,
     required this.title,
     required this.subtitle,
     required this.biometricType,
     this.onCancel,
     this.onRetry,
-  }) : super(key: key);
+  });
 
   @override
   State<CustomBiometricDialog> createState() => _CustomBiometricDialogState();

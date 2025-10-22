@@ -1,8 +1,8 @@
-import 'package:flutter/foundation.dart';
 import 'local_database_service.dart';
 import 'secure_storage_service.dart';
 import 'biometric_service.dart';
 import 'pin_service.dart';
+import 'device_id_service.dart';
 
 /// Authentication Service
 /// 
@@ -21,6 +21,7 @@ class AuthService {
   final SecureStorageService _secureStorage = SecureStorageService.instance;
   final BiometricService _biometricService = BiometricService.instance;
   final PinService _pinService = PinService.instance;
+  final DeviceIdService _deviceIdService = DeviceIdService.instance;
 
   /// Sign in user with email and password
   Future<AuthResult> signIn({
@@ -35,6 +36,10 @@ class AuthService {
         // debugPrint('🔐 AuthService: Empty credentials provided');
         return AuthResult.failure('Please enter both email and password');
       }
+      
+      // Get device ID for security tracking
+      final deviceId = await _deviceIdService.getDeviceId();
+      // debugPrint('🔐 AuthService: Device ID: $deviceId');
       
       // Test database connection
       // debugPrint('🔐 AuthService: Testing database connection...');
@@ -74,6 +79,7 @@ class AuthService {
         userId: actualUserData['user_id'] ?? '',
         authToken: authToken,
         refreshToken: refreshToken,
+        deviceId: deviceId,
       );
       
       // Store user data in secure storage
@@ -124,6 +130,10 @@ class AuthService {
         return AuthResult.failure('Password must be at least 6 characters');
       }
       
+      // Get device ID for security tracking
+      final deviceId = await _deviceIdService.getDeviceId();
+      // debugPrint('🔐 AuthService: Device ID for signup: $deviceId');
+      
       // Test database connection
       // debugPrint('🔐 AuthService: Testing database connection for signup...');
       final healthResponse = await _database.healthCheck();
@@ -163,6 +173,7 @@ class AuthService {
         userId: actualUserData['user_id'] ?? '',
         authToken: authToken,
         refreshToken: refreshToken,
+        deviceId: deviceId,
       );
       
       // Store user credentials in secure storage

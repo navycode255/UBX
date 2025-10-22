@@ -1,90 +1,112 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-/// Reusable page header widget used across multiple pages
 class PageHeader extends StatelessWidget {
   final String title;
-  final IconData? icon;
+  final IconData icon;
   final VoidCallback? onBackPressed;
-  final bool showBackButton;
-  final Widget? trailing;
+  final String? subtitle;
 
   const PageHeader({
     super.key,
     required this.title,
-    this.icon,
+    required this.icon,
     this.onBackPressed,
-    this.showBackButton = true,
-    this.trailing,
+    this.subtitle,
   });
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    final screenWidth = screenSize.width;
     final screenHeight = screenSize.height;
+    final screenWidth = screenSize.width;
 
-    return Row(
-      children: [
-        // Back button
-        if (showBackButton)
-          GestureDetector(
-            onTap: onBackPressed ?? () => context.pop(),
-            child: Container(
-              width: screenWidth * 0.12,
-              height: screenWidth * 0.12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.2),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.3),
-                  width: 1,
-                ),
-              ),
-              child: Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: screenWidth * 0.06,
-              ),
-            ),
-          ),
-        if (showBackButton) SizedBox(width: screenWidth * 0.03),
-        // Title
-        Expanded(
-          child: Text(
-            title,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: screenHeight * 0.028,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        // Icon or trailing widget
-        if (icon != null)
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth * 0.02,
+        vertical: screenHeight * 0.01,
+      ),
+      child: Row(
+        children: [
+          // Back button
           Container(
-            width: screenWidth * 0.12,
-            height: screenWidth * 0.12,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
               color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: Colors.white.withOpacity(0.3),
                 width: 1,
               ),
             ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: screenWidth * 0.06,
+            child: IconButton(
+              onPressed: onBackPressed ?? () => context.pop(),
+              icon: const Icon(
+                Icons.arrow_back_ios,
+                color: Colors.white,
+                size: 20,
+              ),
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(
+                minWidth: 40,
+                minHeight: 40,
+              ),
             ),
-          )
-        else if (trailing != null)
-          trailing!,
-      ],
+          ),
+          
+          SizedBox(width: screenWidth * 0.04),
+          
+          // Title and icon
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                SizedBox(width: screenWidth * 0.03),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: screenHeight * 0.024,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (subtitle != null) ...[
+                        SizedBox(height: screenHeight * 0.005),
+                        Text(
+                          subtitle!,
+                          style: TextStyle(
+                            fontSize: screenHeight * 0.016,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
-
-

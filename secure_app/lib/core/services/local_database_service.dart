@@ -17,7 +17,7 @@ class LocalDatabaseService {
 
   static Database? _database;
   static const String _databaseName = 'secure_app.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2;
 
   /// Get database instance
   Future<Database> get database async {
@@ -61,6 +61,7 @@ class LocalDatabaseService {
         user_id TEXT NOT NULL,
         auth_token TEXT NOT NULL,
         refresh_token TEXT NOT NULL,
+        device_id TEXT,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -84,7 +85,10 @@ class LocalDatabaseService {
 
   /// Handle database upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Handle future database schema changes here
+    if (oldVersion < 2) {
+      // Add device_id column to user_sessions table
+      await db.execute('ALTER TABLE user_sessions ADD COLUMN device_id TEXT');
+    }
   }
 
   /// Hash password using SHA-256
@@ -350,6 +354,7 @@ class LocalDatabaseService {
     required String userId,
     required String authToken,
     required String refreshToken,
+    String? deviceId,
     int? expiresInHours,
   }) async {
     try {
@@ -371,6 +376,7 @@ class LocalDatabaseService {
         'user_id': userId,
         'auth_token': authToken,
         'refresh_token': refreshToken,
+        'device_id': deviceId,
         'created_at': now,
         'expires_at': expiresAt,
       });

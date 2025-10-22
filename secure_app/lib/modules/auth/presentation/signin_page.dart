@@ -19,7 +19,7 @@ import '../../../router/route_constants.dart';
 ///    - App retrieves the stored token
 ///    - Authenticates silently (no password typing)
 class SignInPage extends StatefulWidget {
-  const SignInPage({Key? key}) : super(key: key);
+  const SignInPage({super.key});
 
   @override
   State<SignInPage> createState() => _SignInPageState();

@@ -595,7 +595,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                           Switch(
                             value: _isBiometricEnabled,
                             onChanged: (_isLoading || !_isBiometricAvailable) ? null : (_) => _toggleBiometric(),
-                            activeColor: Colors.white.withOpacity(0.3),
+                            activeThumbColor: Colors.white.withOpacity(0.3),
                             activeTrackColor: Colors.white.withOpacity(0.2),
                             inactiveThumbColor: Colors.white.withOpacity(0.6),
                             inactiveTrackColor: Colors.white.withOpacity(0.1),
@@ -721,7 +721,7 @@ class _BiometricSettingsPageState extends State<BiometricSettingsPage> {
                                 if (_pinLockoutTimeRemaining > 0) ...[
                                   SizedBox(height: screenHeight * 0.005),
                                   Text(
-                                    'Lockout time remaining: ${_pinLockoutTimeRemaining} seconds',
+                                    'Lockout time remaining: $_pinLockoutTimeRemaining seconds',
                                     style: TextStyle(
                                       fontSize: screenWidth * 0.035,
                                       color: Colors.red[600],
